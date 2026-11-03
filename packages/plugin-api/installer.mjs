@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import {unpackZip} from './zip.mjs';
-import {LIMITS,directory,inspectPackage,configuration,scanPlugins,atomicJson,validateValue,fail} from './catalog.mjs';
+import {LIMITS,directory,inspectPackage,configuration,scanPlugins,atomicJson,validateValue,fail,saveConfiguration} from './catalog.mjs';
 
 export class PluginInstaller{
   constructor(root){this.root=path.resolve(root);this.tickets=new Map();}
@@ -53,7 +53,7 @@ export class PluginInstaller{
         try{validateValue(value,item.configSchema[key]);settings[key]=value;}catch{}
       }
       saved.config.plugins[item.id]={enabled:false,permissions:[],chats:previous.chats??[],settings,generation:crypto.randomUUID()};
-      atomicJson(path.join(directory(this.root,'config'),'plugins.json'),saved.config);
+      saveConfiguration(this.root,saved.config,saved.revision);
     }catch(error){
       if(fs.existsSync(target)&&!fs.existsSync(pending.folder))fs.renameSync(target,pending.folder);
       if(archive)fs.renameSync(archive,target);

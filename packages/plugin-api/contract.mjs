@@ -1,7 +1,7 @@
 // Pure shared data: installer, runtime, worker, DSH health and console UI use it.
 export const API_VERSION = 2;
 export const HOST_RUNTIME = 'isolated-v2';
-export const CONTRACT_REVISION = 'wechatagent-plugin-v2.4';
+export const CONTRACT_REVISION = 'wechatagent-plugin-v2.5';
 export const PERMISSION_LABELS = Object.freeze({
   storage: '保存插件数据',
   history_read: '读取当前聊天历史',
@@ -18,6 +18,7 @@ export const PERMISSION_LABELS = Object.freeze({
 });
 export const PERMISSIONS = Object.freeze(Object.keys(PERMISSION_LABELS));
 export const FEATURE_LABELS = Object.freeze({
+  'secure-plugin-settings-v1': 'Windows 用户绑定的插件设置加密',
   'actions-v1': '宿主动作',
   'documents-v1': '独立文档',
   'persona-read-v1': '当前人设读取',
@@ -76,6 +77,7 @@ export function hostCompatibility(item, live) {
 // Kept in one place so prepare/build checks cannot omit a new runtime module.
 export const PLUGIN_HOST_FILES = Object.freeze([
   'packages/plugin-api/contract.mjs', 'packages/plugin-api/catalog.mjs',
+  'packages/plugin-api/settings-protection.mjs',
   'packages/plugin-api/index.mjs', 'packages/plugin-api/process.mjs',
   'packages/plugin-api/worker.mjs', 'packages/plugin-api/installer.mjs',
   'packages/plugin-api/zip.mjs', 'packages/plugin-api/documents.mjs',

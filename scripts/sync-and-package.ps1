@@ -1,7 +1,8 @@
 ﻿param(
- [string]$Version='0.5.3',
+ [string]$Version='0.5.4',
  [string]$Baseline='D:\weixiagen\release\archive\WeChatAgent-0.4.3',
  [string]$ClientRoot='D:\weixiagen\data\workspace\state\hook\wechat-4.1.10.27',
+ [string]$ReaderKeyDll='',
  [string]$OutputDirectory='',
  [string]$StagingDirectory=''
 )
@@ -13,6 +14,10 @@ if(!$StagingDirectory){$StagingDirectory="D:\weixiagen\release\WeChatGirl-$Versi
 $stage=[IO.Path]::GetFullPath($StagingDirectory).TrimEnd('\')
 $baselinePath=(Resolve-Path -LiteralPath $Baseline).Path.TrimEnd('\')
 $clientPath=(Resolve-Path -LiteralPath $ClientRoot).Path.TrimEnd('\')
+$readerKeyRelative='components/weflow-cli/resources/key/win32/x64/wx_key.dll'
+if(!$ReaderKeyDll){$ReaderKeyDll=Join-Path $baselinePath ('app/resources/project/'+$readerKeyRelative)}
+& node (Join-Path $repo 'scripts/runtime-components.mjs') file $ReaderKeyDll
+if($LASTEXITCODE -ne 0){throw 'Reader key component missing, changed or incompatible. Supply -ReaderKeyDll from the reviewed distribution; no package was created.'}
 if($stage -eq $baselinePath -or $stage.StartsWith($baselinePath+'\',[StringComparison]::OrdinalIgnoreCase) -or $baselinePath.StartsWith($stage+'\',[StringComparison]::OrdinalIgnoreCase)){throw 'Staging must be separate from baseline.'}
 if((Test-Path -LiteralPath $stage) -or (Test-Path -LiteralPath $OutputDirectory)){throw 'Use new staging and output directories.'}
 if((Get-Content -LiteralPath (Join-Path $repo 'package.json') -Raw|ConvertFrom-Json).version -ne $Version){throw 'Source and requested versions differ.'}
@@ -50,6 +55,12 @@ foreach($relative in $sourceFiles){
  Copy-Item -LiteralPath $source -Destination $destination
 }
 Copy-Tree (Join-Path $repo 'desktop') (Join-Path $resources 'app') @('node_modules') @('*.tmp','*.log')
+# Native runtime files are ignored by Git; include this independently reviewed component explicitly.
+$readerKeyDestination=Join-Path $project $readerKeyRelative
+New-Item -ItemType Directory -Path (Split-Path -Parent $readerKeyDestination) -Force|Out-Null
+Copy-Item -LiteralPath $ReaderKeyDll -Destination $readerKeyDestination
+& node (Join-Path $repo 'scripts/runtime-components.mjs') file $readerKeyDestination
+if($LASTEXITCODE -ne 0){throw 'Copied reader key component failed verification.'}
 # Restore only the reviewed, locked runtime dependency tree; never copy a live node_modules.
 & npm ci --prefix (Join-Path $project 'packages/dsh-social-bridge-plugin') --ignore-scripts --omit=dev --omit=optional --no-audit --no-fund
 if($LASTEXITCODE -ne 0){throw 'Locked bridge runtime dependencies could not be prepared.'}

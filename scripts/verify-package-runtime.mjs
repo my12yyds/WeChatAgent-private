@@ -2,9 +2,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
+import {verifyPackagedComponents} from './runtime-components.mjs';
 
 const payload=fs.realpathSync(process.argv[2]);
 const project=path.join(payload,'app/resources/project');
+verifyPackagedComponents(project);
 const node=path.join(payload,'app/resources/runtime/node.exe');
 const entry=pathToFileURL(path.join(project,'scripts/console-server.mjs')).href;
 const bridge=pathToFileURL(path.join(project,'packages/dsh-social-bridge-plugin/package.json')).href;

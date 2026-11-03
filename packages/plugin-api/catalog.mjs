@@ -3,6 +3,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import {validateSchema,validateValue,atomicJson,allowedChat,publicSettings} from '../extension-runtime/catalog.mjs';
 import {PERMISSIONS,HOST_FEATURES} from './contract.mjs';
+import {settingsCodec} from './settings-protection.mjs';
 
 export const API_VERSION=2;
 export const LIMITS=Object.freeze({zipBytes:8*1024*1024,expandedBytes:16*1024*1024,fileBytes:4*1024*1024,files:128,plugins:32});
@@ -13,6 +14,15 @@ export const fail=(message,status=400)=>Object.assign(new Error(message),{status
 export const hash=value=>crypto.createHash('sha256').update(value).digest('hex');
 export const json=file=>JSON.parse(fs.readFileSync(file,'utf8').replace(/^\uFEFF/,''));
 export {validateSchema,validateValue,atomicJson,allowedChat};
+function commitConfiguration(file,sealed,revision){
+  const lock=file+'.write.lock';let descriptor;
+  try{descriptor=fs.openSync(lock,'wx',0o600);}catch(error){if(error.code==='EEXIST')throw fail('另一实例正在保存插件配置，请稍后重试。',409);throw error;}
+  try{
+    const raw=fs.existsSync(file)?fs.readFileSync(file,'utf8'):'{"version":1,"plugins":{}}';
+    if(hash(raw)!==revision)throw fail('插件设置已变化，请刷新后重试。',409);
+    atomicJson(file,sealed);
+  }finally{fs.closeSync(descriptor);fs.unlinkSync(lock);}
+}
 export function directory(root,relative){
   const base=path.resolve(root),target=path.resolve(base,relative);
   if(!target.startsWith(base+path.sep))throw fail('插件目录无效。');
@@ -81,8 +91,20 @@ export function configuration(root){
   const raw=fs.existsSync(file)?fs.readFileSync(file,'utf8'):'{"version":1,"plugins":{}}';
   if(Buffer.byteLength(raw)>512*1024)throw fail('插件配置过大。');
   let config;try{config=JSON.parse(raw.replace(/^\uFEFF/,''));}catch{throw fail('插件配置不可读，请保留 config/plugins.json 并修复其 JSON 格式。',503);}
-  if(!config||config.version!==1||!config.plugins||typeof config.plugins!=='object'||Array.isArray(config.plugins))throw fail('插件配置无效。');
-  return {config,revision:hash(raw)};
+  if(!config||![1,2].includes(config.version)||!config.plugins||typeof config.plugins!=='object'||Array.isArray(config.plugins))throw fail('插件配置无效。');
+  const decoded=settingsCodec.decode(config);
+  if(config.version===1&&Object.keys(config.plugins).length){
+    const sealed=settingsCodec.encode(decoded);
+    if(Buffer.byteLength(JSON.stringify(sealed,null,2)+'\n')>512*1024)throw fail('加密后的插件配置过大，原文件已保留。',413);
+    commitConfiguration(file,sealed,hash(raw));
+    return {config:settingsCodec.decode(sealed),revision:hash(JSON.stringify(sealed,null,2)+'\n')};
+  }
+  return {config:decoded,revision:hash(raw)};
+}
+export function saveConfiguration(root,config,revision){
+  const file=path.join(directory(root,'config'),'plugins.json'),sealed=settingsCodec.encode(config);
+  if(Buffer.byteLength(JSON.stringify(sealed,null,2)+'\n')>512*1024)throw fail('加密后的插件配置过大，原文件已保留。',413);
+  commitConfiguration(file,sealed,revision);
 }
 export function updatePlugin(root,id,body){
   const saved=configuration(root);if(body.revision!==saved.revision)throw fail('插件设置已变化，请刷新后重试。',409);
@@ -95,7 +117,7 @@ export function updatePlugin(root,id,body){
   validateValue(settings,{type:'object',properties:item.configSchema,additionalProperties:false},'插件设置');
   if(item.schedule&&!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(settings[item.schedule.timeSetting]??''))throw fail('每日计划时间必须为 HH:MM。');
   saved.config.plugins[id]={enabled:body.enabled,permissions:[...new Set(body.permissions)],chats:body.chats===null?null:[...new Set(body.chats)],settings,generation:crypto.randomUUID()};
-  atomicJson(path.join(directory(root,'config'),'plugins.json'),saved.config);return configuration(root);
+  saveConfiguration(root,saved.config,saved.revision);return configuration(root);
 }
 export function pluginCatalog(root,runtime=[]){
   let saved,items;try{saved=configuration(root);items=scanPlugins(root);}catch{return {apiVersion:2,revision:null,plugins:[],error:'插件配置或目录不可读，原文件已保留。请检查 config/plugins.json 和 plugins 目录。'};}
@@ -124,7 +146,7 @@ export function archivePlugin(root,id,revision){
   const target=path.join(directory(root,'plugins'),id);if(!fs.existsSync(target)||fs.lstatSync(target).isSymbolicLink())throw fail('插件不存在。',404);
   const archive=path.join(directory(root,'state/plugin-archives'),id+'-'+crypto.randomUUID());
   fs.renameSync(target,archive);
-  try{delete saved.config.plugins[id];atomicJson(path.join(directory(root,'config'),'plugins.json'),saved.config);}
+  try{delete saved.config.plugins[id];saveConfiguration(root,saved.config,saved.revision);}
   catch(error){fs.renameSync(archive,target);throw error;}
   return configuration(root);
 }

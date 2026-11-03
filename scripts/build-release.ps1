@@ -1,7 +1,7 @@
 ﻿param(
   [Parameter(Mandatory=$true)][string]$PayloadRoot,
   [Parameter(Mandatory=$true)][string]$OutputDirectory,
-  [string]$Version = '0.5.3',
+  [string]$Version = '0.5.4',
   [switch]$Resume,
   [switch]$InstallerTestMode
 )

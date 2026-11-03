@@ -12,12 +12,12 @@
 
 ## 命令示例
 
-以下是 0.5.3 **完成构建后**的示例，需要本机 GitHub CLI 已安装并有写入权限。附件位于源码仓库外的发行目录，不能照抄旧版相对路径。遇到同名标签先检查归属，不覆盖已有版本。
+以下是 0.5.4 **完成构建后**的示例，需要本机 GitHub CLI 已安装并有写入权限。附件位于源码仓库外的发行目录，不能照抄旧版相对路径。遇到同名标签先检查归属，不覆盖已有版本。
 
 ```powershell
-$releaseVersion = '0.5.3'
+$releaseVersion = '0.5.4'
 $releaseTag = "v$releaseVersion"
-$releaseOutput = 'D:\weixiagen\release\artifacts-0.5.3'
+$releaseOutput = 'D:\weixiagen\release\artifacts-0.5.4'
 git fetch origin
 git status --short --branch
 git diff --check

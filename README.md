@@ -2,7 +2,7 @@
 
 Windows 微信助手与本机管理控制台，由 my12yyds 维护。为指定好友和群聊提供人格对话、图片理解、表情、人物记忆和语音；管理员可在明确授权后，通过微信调用 DSH 完成任务。
 
-本文对应 **0.5.3**。安装包是否已上传、实际组件版本与验证范围，以[对应 Release](https://github.com/my12yyds/WeChatGirl/releases)及其校验文件为准。源码包含功能实现，不代表新电脑已具备全部模型、服务和登录权限。
+本文对应 **0.5.4**。安装包是否已上传、实际组件版本与验证范围，以[对应 Release](https://github.com/my12yyds/WeChatGirl/releases)及其校验文件为准。源码包含功能实现，不代表新电脑已具备全部模型、服务和登录权限。
 
 本项目基于 [sourcepro5/WeChatAgent](https://github.com/sourcepro5/WeChatAgent) 二次开发；桥接框架源自 [Derpyu520/qq-bridge](https://github.com/Derpyu520/qq-bridge)，NT 读取源自 [zhuobichen/weflow-cli](https://github.com/zhuobichen/weflow-cli) 等组件。来源和修改范围见[声明](声明.md)，第三方许可见 [LICENSES.md](LICENSES.md)，本人原创部分见 [LICENSE-MY12YYDS.md](LICENSE-MY12YYDS.md)。
 
