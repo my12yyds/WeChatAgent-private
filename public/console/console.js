@@ -6,6 +6,7 @@ import {createFishNotebookUI} from './fish-notebook.js';
 import {createAssistantFeedbackUI} from './assistant-feedback.js';
 import {createPersonaStudio} from './persona-studio.js';
 import {createDshModelsUI} from './dsh-models.js';
+import {wechatClientsCard,renderClientResult} from './wechat-clients.mjs';
 'use strict';
 import { personaError, decodePersonaFile, MAX_PERSONA_BYTES } from './persona-files.mjs';
 import {createPersonaDeletion} from './persona-delete.js';
@@ -404,7 +405,7 @@ function connectionsPage() {
   const r = state.reader;
   state.readerDraft ??= { dbPath: r?.dbPath ?? '', myWxid: r?.myWxid ?? '', decryptKey: '' };
   return `<div class="section-stack">${dshModels.card()}${dshModels.visionCard()}<section class="card">${header('模型连接', '使用你已在 DSH 中配置的模型。', '', 'plug')}<div class="form-grid">${field('DSH 程序位置', 'runtime.dshDesktop', { full: true, browse: 'exe', placeholder: '选择 DeepSeek Harness.exe', help: '启动时若 DSH 尚未打开，会尝试打开这个程序。' })}</div>${pluginPathField()}<div class="notice plain">${icon('info')}<span>模型从 DSH 列表选择并保存后，下一次请求生效，无需重开 DSH。</span></div></section>
-    <section class="card">${header('微信与读取程序', '选择本机已准备的程序。', '', 'chat')}<div class="form-grid">${field('匹配微信程序位置', 'hook.wechatExecutable', { full: true, browse: 'exe', help: '当前发送后端固定匹配 4.1.10.27。选择程序不会改变兼容版本。' })}${field('Python 程序位置', 'runtime.python', { full: true, browse: 'exe', help: '选择已有环境的 python.exe，也可填写可用的 Python 命令。' })}</div></section>
+    ${wechatClientsCard()}<section class="card">${header('微信与读取程序', '选择本机已准备的程序。', '', 'chat')}<div class="form-grid">${field('匹配微信程序位置', 'hook.wechatExecutable', { full: true, browse: 'exe', help: '自动检测结果见上方版本卡。完整收发使用内置 4.1.10.27 x64，其他版本不会套用此工具。' })}${field('Python 程序位置', 'runtime.python', { full: true, browse: 'exe', help: '选择已有环境的 python.exe，也可填写可用的 Python 命令。' })}</div></section>
     ${readerConfigurationCard()}
     <section class="card">${header('高级连接选项', '通常无需修改。端口需要互不重复。', '', 'sliders')}<details><summary>展开端口与发送超时设置</summary><div class="form-grid">${field('读取服务端口', 'ports.weflow', { type: 'number', min: 1024, max: 65535 })}${field('消息桥接端口', 'ports.onebot', { type: 'number', min: 1024, max: 65535 })}${field('适配器状态端口', 'ports.adapter', { type: 'number', min: 1024, max: 65535 })}${field('DSH 插件端口', 'ports.dshPlugin', { type: 'number', min: 1024, max: 65535 })}${field('发送后端地址', 'hook.baseUrl', { full: true, help: '必须为本机回环 HTTP 地址，例如 http://127.0.0.1:30001。' })}${field('发送请求超时 / 秒', 'hook.requestTimeoutMs', { type: 'number', transform: 'seconds', min: 1, max: 5, step: .1 })}${field('回执等待超时 / 秒', 'hook.receiptTimeoutMs', { type: 'number', transform: 'seconds', min: 1, max: 18, step: .1 })}${field('并发发送上限', 'hook.maxConcurrentSends', { type: 'number', min: 1, max: 4, step: 1 })}</div></details></section></div>`;
 }
@@ -433,7 +434,7 @@ function setupPage() {
   const progress=guideProgress();state.setupStep??=progress.next;const step=state.setupStep;
   const save='<button class="button primary" data-guide-save>保存设置</button>';
   let content='';
-  if(step==='wechat')content='<section class="card">'+header('先登录匹配微信','使用本安装准备的微信客户端，登录自己的账号并等待消息同步。','','chat')+'<div class="button-row"><button class="button primary" data-action="wechat-open">打开匹配微信</button><button class="button" data-repair-wechat>遇到登录或连接问题</button></div><p class="card-description space-top">已在其他微信登录，也需要在这个匹配客户端完成登录。程序只读取你在下一步验证的账号。</p></section>'+readerConfigurationCard()+'<details class="card setup-help"><summary>安装文件或运行环境检查</summary><p class="card-description space-top">运行环境已经内置，通常无需额外安装。只有启动报错时才需要检查。</p><button class="button space-top" data-action="setup">检查内置环境</button></details>';
+  if(step==='wechat')content=wechatClientsCard()+'<section class="card">'+header('先登录匹配微信','使用本安装准备的微信客户端，登录自己的账号并等待消息同步。','','chat')+'<div class="button-row"><button class="button primary" data-action="wechat-open">打开匹配微信</button><button class="button" data-repair-wechat>遇到登录或连接问题</button></div><p class="card-description space-top">已在其他微信登录，也需要在这个匹配客户端完成登录。程序只读取你在下一步验证的账号。</p></section>'+readerConfigurationCard()+'<details class="card setup-help"><summary>安装文件或运行环境检查</summary><p class="card-description space-top">运行环境已经内置，通常无需额外安装。只有启动报错时才需要检查。</p><button class="button space-top" data-action="setup">检查内置环境</button></details>';
   if(step==='dsh')content=dshInstallCard({header,field,pluginPathField,guide:true})+'<section class="notice plain"><span>DSH 插件未连接时：确认添加的是此页显示的目录，已启用插件，然后从系统托盘完整退出 DSH，再重新打开。关闭主窗口可能只会收起到托盘。</span></section>';
   if(step==='model')content=dshModels.card()+dshModels.visionCard()+'<section class="card"><h3>选择后保存</h3><p class="card-description">先在 DSH 中配置自己的模型账号，再回到这里刷新列表。请选择已开通、支持文字对话的模型，无需手填名称。图片或视频生成模型不适合用作聊天模型。</p><div class="button-row space-top">'+save+'<button class="button" data-guide-step="dsh">返回检查 DSH</button></div><p class="subtle space-top">这里只检查模型是否在当前列表中，不会自动发送测试请求或消耗模型额度。</p></section>';
   if(step==='start')content='<section class="card">'+header('让微信与模型连接起来','前三步检查通过后，启动读取、桥接和模型连接。','','power')+'<ul class="setup-checklist">'+progress.steps.slice(0,3).map(item=>'<li data-guide-check="'+item.id+'"><span class="status-tag '+(item.done?'ok':'warn')+'">'+(item.done?'已通过':'待完成')+'</span><button class="link-button" data-guide-step="'+item.id+'">'+escapeHtml(item.title)+'</button><small>'+escapeHtml(item.detail)+'</small></li>').join('')+'</ul><p id="guide-start-hint" class="card-description space-top"></p><div class="button-row space-top">'+save+'<button class="button primary" data-guide-start data-action="'+(state.status?.running||state.status?.pendingApply?'restart':'start')+'">'+(state.status?.running||state.status?.pendingApply?'应用设置并检查连接':'启动服务')+'</button><a class="button" href="#overview">查看连接详情</a></div><p class="subtle space-top">暂未选择聊天也可以先启动，以便下一步搜索好友或群聊；只会处理已加入允许范围的聊天。</p></section>';
@@ -497,6 +498,7 @@ async function renderPage() {
     }else host.innerHTML=markup;
   }else{host.style.minHeight='';host.innerHTML=markup;}
   host.removeAttribute('aria-busy'); updateDraftUI(); paintStatus(); paintReaderSetup();
+  if($('#wechat-clients'))void inspectWeChatClients();
   if(page==='music')mountMusicPage($('#music-page'),{api,esc:escapeHtml,toast,chats:['private','group'].flatMap(kind=>(state.config.wechat.whitelist[kind==='group'?'groups':'private']??[]).map(value=>{const key='wechat:'+kind+':'+value;return {key,name:state.names.get(key)??key};}))});
   if(page==='setup'&&state.setupStep==='features')void mountFeatureSetup($('#feature-setup-list'),{api,project:state.draft,esc:escapeHtml});
   if(page==='settings'&&state.settingsSection==='connections'||page==='setup'&&state.setupStep==='model')void dshModels.mount();
@@ -599,6 +601,28 @@ async function pollJob() {
     if (state.job?.state === 'succeeded' && state.page === 'chats') await renderPage();
   } catch (error) { showError('操作状态暂时无法获取：' + error.message + '。正在通过运行状态重新检查，请勿重复执行。'); }
   finally { jobPolling = false; paintReaderSetup(); }
+}
+async function inspectWeChatClients(force=false) {
+  const host=$('#wechat-clients');if(!host)return;
+  const output=host.querySelector('[data-wechat-client-result]'),button=host.querySelector('[data-wechat-bundled-open]');
+  button.disabled=true;
+  try{const data=await api('/api/wechat-clients'+(force?'?refresh=1':''));if(!host.isConnected)return;output.innerHTML=renderClientResult(data,escapeHtml);button.disabled=!data.bundled?.canLaunch;}
+  catch(error){if(host.isConnected)output.textContent='微信版本检测未完成：'+error.message;}
+}
+async function openBundledWeChat(button) {
+  if(hasDraft())return toast('请先保存或放弃草稿，再选择内置微信。');
+  if(state.job?.state==='running')return toast('请等待当前操作完成。');
+  button.disabled=true;
+  try{
+    const data=await api('/api/wechat-clients?refresh=1'),client=data.bundled;
+    if(!client?.canLaunch)throw Error(client?.status??'内置匹配微信缺失，请重新安装程序并保留 data。');
+    if(!client.configured){
+      if(state.status?.running)throw Error('请先停止助手服务，再切换到内置微信。');
+      const config=structuredClone(state.config);config.hook.wechatExecutable=client.path;config.hook.expectedVersion=data.expectedVersion;
+      const result=await api('/api/config',{config,revision:state.revision});state.config=result.config;state.draft=structuredClone(result.config);state.revision=result.revision;updateDraftUI();
+    }
+    await runAction('wechat-open');
+  }catch(error){toast(error.message);}finally{if(button.isConnected)button.disabled=false;}
 }
 async function runAction(action, conversationKey) {
   if (action === 'reader-connect') return saveReader(true);
@@ -719,6 +743,8 @@ document.addEventListener('change', event => {
   }
 });
 document.addEventListener('click', event => {
+  const clientAction=event.target.closest('[data-wechat-client-refresh],[data-wechat-bundled-open]');
+  if(clientAction){if(clientAction.hasAttribute('data-wechat-client-refresh'))void inspectWeChatClients(true);else void openBundledWeChat(clientAction);return;}
   const pluginRoute=event.target.closest('a[data-plugin-config-route]');if(pluginRoute){state.pluginReturnHash='#setup/features';return;}
   const button = event.target.closest('button'); if (!button) return;
   if(button.dataset.guideStep){if(state.setupStep===button.dataset.guideStep&&state.page==='setup')return;if(guideProgress().steps.some(step=>step.id===button.dataset.guideStep)){state.setupStep=button.dataset.guideStep;location.hash='#setup/'+button.dataset.guideStep;}return;}

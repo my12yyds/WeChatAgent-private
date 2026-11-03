@@ -23,6 +23,7 @@ if ($ours.Count) {
     Wait-HookClient $exe $config.hook.baseUrl $config.hook.expectedVersion (Join-Path $root 'state\hook\native-token.txt')
     Write-Output 'Matching WeChat sender is ready. Finish login, then start WeChatAgent.'; exit 0
 }
+if (-not $PrepareOnly -and $existing.Count) { throw 'Another desktop WeChat is running. Exit it from the tray before opening the isolated Hook client; this script does not terminate it.' }
 $native = Join-Path $root 'state\hook\native'
 $build = Get-Content -LiteralPath (Join-Path $native 'build.json') -Raw -Encoding UTF8 | ConvertFrom-Json
 $dll = Join-Path $native 'version.dll'
@@ -47,4 +48,4 @@ if (Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyCon
 $clientProcess = Start-Process -FilePath $exe -ArgumentList ('StartPort='+$port+' CallBackURL="http://127.0.0.1:'+ $config.ports.adapter + '/unused"') -WorkingDirectory $directory -WindowStyle Normal -PassThru
 Write-Output 'Waiting for matching WeChat launcher handoff and sender initialization...'
 Wait-HookClient $exe $config.hook.baseUrl $config.hook.expectedVersion (Join-Path $root 'state\hook\native-token.txt')
-Write-Output ('Opened matching WeChat '+$config.hook.expectedVersion+'; sender is ready. Log in, then start WeChatAgent.cmd.')
+Write-Output ('Opened bundled matching WeChat '+$config.hook.expectedVersion+'; sender is ready. Log in, then start services in WeChatGirl.')

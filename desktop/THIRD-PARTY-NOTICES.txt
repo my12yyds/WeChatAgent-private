@@ -1,4 +1,4 @@
-WeChatGirl 0.5.2
+WeChatGirl 0.5.3
 
 This release carries forward notices from the WeChatAgent 0.4.3 distribution.
 

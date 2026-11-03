@@ -76,6 +76,13 @@ export class DshPluginClient {
       return output.split(/STICKER_LABELS:/)[0].trim();
     }
     if (!response.ok || body.error) {
+      // The local plugin can return HTTP 502 for a native turn whose provider
+      // actually rejected the request with 429. Preserve that diagnosis without
+      // exposing the provider's raw response or changing admission/retry rules.
+      const providerDetail=typeof body.detail==='string'?body.detail.slice(0,4096):'';
+      if(response.status===429||['429','42908','RATE_LIMITED','TOO_MANY_REQUESTS'].includes(String(body.code??''))||/^\s*429\s*:/.test(providerDetail)||/all upstreams temporarily rate-limited/i.test(providerDetail)){
+        throw Object.assign(new Error('DSH 模型服务暂时限流（429），请稍后重试或在聊天设置中选择其他可用提供方。'),{code:'MODEL_RATE_LIMITED',status:429,admitted:body.admitted===true});
+      }
       const budgetCode=typeof body.detail==='string'?/\bSEARCH_(?:TICKET_SPENT|MODEL_REQUEST_LIMIT|BUDGET_DENIED)\b/.exec(body.detail)?.[0]:null;
       const detail = budgetCode?` (${budgetCode})`:typeof body.detail === 'string' && /^[a-zA-Z_]{3,100}$/.test(body.detail) ? ` (${body.detail})` : '';
       throw Object.assign(new Error(`DSH plugin: ${body.error ?? response.status}${detail}`),{admitted:body.admitted===true});

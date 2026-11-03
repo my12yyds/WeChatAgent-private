@@ -2,7 +2,7 @@
 
 Windows 微信助手与本机管理控制台，由 my12yyds 维护。为指定好友和群聊提供人格对话、图片理解、表情、人物记忆和语音；管理员可在明确授权后，通过微信调用 DSH 完成任务。
 
-本文对应 **0.5.2**。安装包是否已上传、实际组件版本与验证范围，以[对应 Release](https://github.com/my12yyds/WeChatGirl/releases)及其校验文件为准。源码包含功能实现，不代表新电脑已具备全部模型、服务和登录权限。
+本文对应 **0.5.3**。安装包是否已上传、实际组件版本与验证范围，以[对应 Release](https://github.com/my12yyds/WeChatGirl/releases)及其校验文件为准。源码包含功能实现，不代表新电脑已具备全部模型、服务和登录权限。
 
 本项目基于 [sourcepro5/WeChatAgent](https://github.com/sourcepro5/WeChatAgent) 二次开发；桥接框架源自 [Derpyu520/qq-bridge](https://github.com/Derpyu520/qq-bridge)，NT 读取源自 [zhuobichen/weflow-cli](https://github.com/zhuobichen/weflow-cli) 等组件。来源和修改范围见[声明](声明.md)，第三方许可见 [LICENSES.md](LICENSES.md)，本人原创部分见 [LICENSE-MY12YYDS.md](LICENSE-MY12YYDS.md)。
 
@@ -11,6 +11,7 @@ Windows 微信助手与本机管理控制台，由 my12yyds 维护。为指定�
 适用 Windows 10/11 x64。当前连接适配针对微信 **4.1.10.27 x64**，桥接 SDK **0.2.0-rc.2**；其他微信版本不能直接视为兼容。DSH 桌面程序需单独安装。
 
 1. 安装版选择根目录；新版便携包解压后双击根目录的 `WeChatGirl.exe`，也可直接运行 `app/WeChatGirl.exe`。程序与同级 `data` 数据目录分开保存。旧 0.5.1 附件仍保留原入口，新安装流程见[安装说明](docs/INSTALLER_RELEASE.md)。
+   配置向导与连接设置提供[微信版本检测和内置匹配版启动](docs/WECHAT_CLIENTS.md)，完整收发使用已验证的 4.1.10.27 x64，不需要手动匹配旧版工具。
 2. 首次打开进入**配置向导**：连接匹配微信并验证当前账号与数据库，连接外部 DSH，读取并选择模型。
 3. 在向导确认**发送模式**，启动服务，添加允许的好友或群聊，再试聊。新安装的聊天允许范围为空。
 4. 按需配置图片分流、人格、表情、记忆和媒体插件。可选功能不阻挡基础聊天，也不会自动授权或发布内容。

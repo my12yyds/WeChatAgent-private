@@ -1,13 +1,13 @@
 # Windows 安装、升级与发行包
 
-本文说明当前源码的 Windows 打包方式。0.5.2 改用图形安装流程；旧 0.5.1 附件保持原样；实际公开下载以 [GitHub Releases](https://github.com/my12yyds/WeChatGirl/releases) 为准。
+本文说明当前源码的 Windows 打包方式。0.5.3 改用图形安装流程；旧 0.5.1 附件保持原样；实际公开下载以 [GitHub Releases](https://github.com/my12yyds/WeChatGirl/releases) 为准。
 
 ## 包与依赖
 
 | 附件 | 用途 |
 | --- | --- |
-| WeChatGirl-Setup-0.5.2-x64.exe | 新构建使用 Electron Builder + NSIS 中文图形安装器，旧附件保持原样 |
-| WeChatGirl-0.5.2-portable-x64.zip | 新构建解压后双击根目录 WeChatGirl.exe 或 app/WeChatGirl.exe；不弹出命令窗口 |
+| WeChatGirl-Setup-0.5.3-x64.exe | 新构建使用 Electron Builder + NSIS 中文图形安装器，旧附件保持原样 |
+| WeChatGirl-0.5.3-portable-x64.zip | 新构建解压后双击根目录 WeChatGirl.exe 或 app/WeChatGirl.exe；不弹出命令窗口 |
 | WeChatGirl-voice-components.zip | 可选语音运行组件，具体内容以归档清单为准 |
 | SHA256SUMS.txt | 核对附件完整性 |
 | VERIFICATION.json | 当前构建元数据；具体测试范围另见同版本日志 |
@@ -32,7 +32,7 @@ Windows 安装组件参考[原项目固定提交](https://github.com/sourcepro5/
 
 ```powershell
 npm ci --prefix packaging/windows --ignore-scripts --no-audit --no-fund
-.\scripts\sync-and-package.ps1 -Version 0.5.2 -StagingDirectory 'D:\发布暂存\WeChatGirl-0.5.2' -OutputDirectory 'D:\发布产物\WeChatGirl-0.5.2'
+.\scripts\sync-and-package.ps1 -Version 0.5.3 -StagingDirectory 'D:\发布暂存\WeChatGirl-0.5.3' -OutputDirectory 'D:\发布产物\WeChatGirl-0.5.3'
 ```
 
 按本机审计基线显式指定 `-Baseline` 和 `-ClientRoot`。如使用独立工具目录，可设置 `WECHATGIRL_BUILDER_HOME` 指向具有锁定 electron-builder 26.15.3 的目录。首次构建由 builder 获取固定版本的 NSIS 编译资源；无须运行第三方安装向导安装编译器。启动 EXE 由系统 .NET Framework 编译器生成，使用 Windows GUI 子系统。
@@ -45,6 +45,6 @@ npm ci --prefix packaging/windows --ignore-scripts --no-audit --no-fund
 
 对隔离测试包运行 `scripts/test-windows-package.ps1 -TestSetup <测试安装包> -Launcher <新启动器> -TestDirectory <不存在的测试目录>`，自动验证中文路径安装、升级、卸载、占用时拒绝修改、数据保留及启动环境。脚本拒绝普通正式安装包，不向真实聊天发消息；结果写入测试目录的 RESULTS.json。
 
-源版本、安装器和脚本默认值已调整为 0.5.2；部署元数据在隔离构建时重新生成，不能复用旧清单。九个产品插件从唯一清单生成可导入 ZIP；用户已安装插件、账号配置和 state 不随包复制。
+源版本、安装器和脚本默认值已调整为 0.5.3；部署元数据在隔离构建时重新生成，不能复用旧清单。九个产品插件从唯一清单生成可导入 ZIP；用户已安装插件、账号配置和 state 不随包复制。
 
 发行前按[发行流程](RELEASE_WORKFLOW.md)审查来源、许可、包体积和归档隐私。SHA256 证明完整性，不证明软件签名、全部功能可用或跨设备验收通过。安装器签名状态、实际隔离测试及未覆盖设备在版本日志如实记录。

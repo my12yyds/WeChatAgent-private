@@ -32,6 +32,7 @@ import {createVoiceConsole} from './voice-console.mjs';
 import {createSpeechPluginConsole} from './speech-plugin-console.mjs';
 import {hostCompatibility} from '../packages/plugin-api/contract.mjs';
 import {ForegroundSender} from './foreground-sender.mjs';
+import {createClientDetector} from './wechat-clients.mjs';
 
 const readJson = file => JSON.parse(fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, ''));
 const hash = value => crypto.createHash('sha256').update(value).digest('hex');
@@ -94,8 +95,9 @@ export function validateConsoleConfig(config, root) {
 }
 
 import {allowedConversation,validateConversationSettings,conversationWorkMode} from '../packages/dsh-social-bridge-plugin/conversation-policy.mjs';
-export function createConsole({ root = projectRoot, port = 3210, runner, readerSetup = runReaderSetup, accountVerifier = verifyWeChatAccount, fetchImpl = fetch, nodeExecutable = process.execPath, filePicker, onQuit, processProbe, processStop, officialLogin, speechCapabilities } = {}) {
+export function createConsole({ root = projectRoot, port = 3210, runner, readerSetup = runReaderSetup, accountVerifier = verifyWeChatAccount, fetchImpl = fetch, nodeExecutable = process.execPath, filePicker, onQuit, processProbe, processStop, officialLogin, speechCapabilities, wechatClientScan } = {}) {
   const updates=createUpdateChecker({root,fetchImpl});
+  const wechatClients=createClientDetector(root,{scan:wechatClientScan});
   const publicDir = path.join(projectRoot, 'public', 'console');
   const pluginInstaller=new PluginInstaller(root);
   const musicConsole=createMusicConsole(root,{officialLogin});
@@ -414,6 +416,7 @@ export function createConsole({ root = projectRoot, port = 3210, runner, readerS
         assets['/persona-categories.js']=['persona-categories.js','text/javascript; charset=utf-8'];assets['/persona-categories.css']=['persona-categories.css','text/css; charset=utf-8'];
         assets['/dsh-install.mjs']=['dsh-install.mjs','text/javascript; charset=utf-8'];
         assets['/dsh-models.js']=['dsh-models.js','text/javascript; charset=utf-8'];
+        assets['/wechat-clients.mjs']=['wechat-clients.mjs','text/javascript; charset=utf-8'];
         assets['/session-groups.js']=['session-groups.js','text/javascript; charset=utf-8'];assets['/session-groups.css']=['session-groups.css','text/css; charset=utf-8'];
         assets['/process-recovery.js']=['process-recovery.js','text/javascript; charset=utf-8'];assets['/process-recovery.css']=['process-recovery.css','text/css; charset=utf-8'];
         assets['/dsh-access.js']=['dsh-access.js','text/javascript; charset=utf-8'];assets['/extensions.js']=['extensions.js','text/javascript; charset=utf-8'];
@@ -422,6 +425,7 @@ export function createConsole({ root = projectRoot, port = 3210, runner, readerS
       }
       if (req.method === 'GET' && route === '/api/info') return reply(200, { project: 'WeChatGirl Console', root, version: 1, token: csrf });
       if (req.headers['x-console-token'] !== csrf) throw fault('控制台连接已更新，请刷新页面。', 401);
+      if(req.method==='GET'&&route==='/api/wechat-clients')return reply(200,await wechatClients.inspect({force:url.searchParams.get('refresh')==='1'}));
       if(req.method==='GET'&&route==='/api/updates')return reply(200,await updates.check());
       if(req.method==='GET'&&route==='/api/assistant-feedback')return reply(200,feedbackSnapshot(root));
       if(req.method==='GET'&&route==='/api/memory')return reply(200,memoryView.overview());
