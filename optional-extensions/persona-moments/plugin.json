@@ -1,0 +1,99 @@
+{
+  "id": "persona-moments",
+  "name": "人格定时朋友圈",
+  "version": "0.3.1",
+  "apiVersion": 2,
+  "host": "wechatagent",
+  "description": "按当前人设定时总结当天聊天，通过本机Python组件填写或发布纯文字朋友圈；支持管理员在私聊里直接发布，以及把重大事件先提交为候选、由管理员确认后再发布。需先安装Python运行环境；默认预览不发布。",
+  "permissions": [
+    "storage",
+    "history_read",
+    "persona_read",
+    "model_generate",
+    "schedule"
+  ],
+  "requiresHostFeatures": [
+    "actions-v1",
+    "persona-read-v1",
+    "model-utility-v1",
+    "daily-schedule-v1",
+    "schedule-phases-v1",
+    "history-day-v1"
+  ],
+  "requiresAccount": true,
+  "schedule": {
+    "timeSetting": "writeTime",
+    "personaScoped": true,
+    "completionSettings": [
+      "mode",
+      "writeTime"
+    ]
+  },
+  "settings": {
+    "writeTime": "21:30",
+    "mode": "preview",
+    "workspaceRoot": "",
+    "pythonExe": "",
+    "adminChatKey": "",
+    "approvalMinutes": 120,
+    "maxPostsPerDay": 1,
+    "autoPropose": true
+  },
+  "configSchema": {
+    "writeTime": {
+      "type": "string",
+      "title": "每日北京时间 HH:MM",
+      "description": "设为00:00时总结前一天的聊天；其他时间总结当天。电脑、微信与DSH需保持运行。",
+      "minLength": 5,
+      "maxLength": 5
+    },
+    "mode": {
+      "type": "string",
+      "title": "运行模式",
+      "enum": [
+        "draft",
+        "preview",
+        "publish"
+      ],
+      "description": "draft只存草稿；preview填好后暂停；publish自动点击发表，需先测试。"
+    },
+    "workspaceRoot": {
+      "type": "string",
+      "title": "WeChatGirl workspace 绝对路径（通常留空）",
+      "description": "留空按安装目录推导；必须含config/wechatagent.json与state。",
+      "maxLength": 500
+    },
+    "pythonExe": {
+      "type": "string",
+      "title": "Python绝对路径（安装运行环境后可留空）",
+      "description": "默认使用兼容数据目录 LocalAppData/WeChatAgentMoments/runtime/Scripts/python.exe；目录名是既有本机数据标识。",
+      "maxLength": 500
+    },
+    "adminChatKey": {
+      "type": "string",
+      "title": "管理员私聊 key（建议填写）",
+      "description": "如 wechat:private:你的管理员微信ID；留空时只允许任意私聊，填写后只有该聊天能发布或确认。",
+      "maxLength": 60
+    },
+    "approvalMinutes": {
+      "type": "integer",
+      "title": "候选有效期（分钟）",
+      "description": "超过后候选自动失效，需要重新提议。",
+      "minimum": 5,
+      "maximum": 720
+    },
+    "maxPostsPerDay": {
+      "type": "integer",
+      "title": "每天最多发布条数",
+      "description": "所有聊天与人设共享；默认1条，最多3条。",
+      "minimum": 1,
+      "maximum": 3
+    },
+    "autoPropose": {
+      "type": "boolean",
+      "title": "允许把重大事件提交为候选",
+      "description": "关闭后模型只能预览和定时任务，不能提议。"
+    }
+  },
+  "author": "my12yyds"
+}

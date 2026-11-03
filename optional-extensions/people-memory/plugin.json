@@ -1,0 +1,39 @@
+{
+  "id": "people-memory",
+  "name": "跨聊天人物记忆",
+  "version": "1.1.0",
+  "apiVersion": 2,
+  "host": "wechatagent",
+  "author": "my12yyds",
+  "description": "按真实微信身份自动记住本人明确的昵称和偏好，回复前自动召回；默认仅本聊天，跨聊天共享需本人明确允许。与原有群友互动记忆一起辅助接话。",
+  "permissions": [
+    "people_memory"
+  ],
+  "requiresHostFeatures": [
+    "people-memory-v1",
+    "people-memory-auto-v1"
+  ],
+  "settings": {
+    "autoRemember": true,
+    "autoRecall": true,
+    "recallLimit": 4
+  },
+  "configSchema": {
+    "autoRemember": {
+      "type": "boolean",
+      "title": "自动保存本人明确的昵称与偏好",
+      "description": "只使用本人的真实发言；不从转发、引用或同名推断身份，简单事实无需模型额外调用工具。"
+    },
+    "autoRecall": {
+      "type": "boolean",
+      "title": "回复前自动读取在场人物的相关记忆"
+    },
+    "recallLimit": {
+      "type": "integer",
+      "title": "每个人物最多召回条数",
+      "minimum": 1,
+      "maximum": 8
+    }
+  },
+  "requiresAccount": true
+}

@@ -1,0 +1,9 @@
+{
+  "name": "wechatgirl",
+  "productName": "WeChatGirl",
+  "version": "0.5.1",
+  "description": "WeChatGirl 微信助手",
+  "main": "main.cjs",
+  "author": "WeChatGirl contributors",
+  "license": "SEE THIRD-PARTY-NOTICES.txt"
+}

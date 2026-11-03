@@ -1,0 +1,18 @@
+{
+  "id": "bilibili-public",
+  "name": "哔哩哔哩",
+  "version": "1.0.0",
+  "apiVersion": 2,
+  "host": "wechatagent",
+  "author": "WeChatGirl",
+  "description": "在聊天里搜B站视频，读取BV号、视频链接和b23短链。获取标题、UP主、简介、分P和可公开读取的字幕，明确区分字幕与简介。无需登录，不操作账号。",
+  "permissions": [
+    "web_fetch"
+  ],
+  "requiresHostFeatures": [
+    "public-media-v1"
+  ],
+  "requiresAccount": true,
+  "settings": {},
+  "configSchema": {}
+}

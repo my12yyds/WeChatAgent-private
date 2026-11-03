@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="64" y1="40" x2="448" y2="480" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#DFF8F4"/><stop offset="1" stop-color="#BDEDE8"/>
+    </linearGradient>
+    <linearGradient id="whale" x1="125" y1="160" x2="387" y2="408" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#68C7D5"/><stop offset="1" stop-color="#398DAD"/>
+    </linearGradient>
+  </defs>
+  <rect x="16" y="16" width="480" height="480" rx="148" fill="url(#bg)"/>
+  <path d="M391 275c34-10 55-34 64-61-28 9-47 7-65-3 14-25 15-49 6-73-18 25-42 37-73 37-26-34-67-55-113-55-76 0-138 58-143 132-3 47 15 87 49 117 26 23 62 37 101 37 58 0 108-31 133-77 37 9 73-2 96-27-28 3-47-6-55-27Z" fill="url(#whale)"/>
+  <path d="M172 153c-5-27 6-49 31-64 14 28 12 51-8 70" fill="#4AA6C1"/>
+  <path d="M318 153c4-27-8-49-33-64-13 28-10 51 10 70" fill="#4AA6C1"/>
+  <path d="M186 102c16-27 45-39 71-20 26-19 55-7 71 20-26-8-48-2-71 16-23-18-45-24-71-16Z" fill="#F28FAE"/>
+  <circle cx="219" cy="253" r="12" fill="#123E50"/><circle cx="308" cy="253" r="12" fill="#123E50"/>
+  <path d="M243 280c11 11 25 11 36 0" fill="none" stroke="#123E50" stroke-width="9" stroke-linecap="round"/>
+  <ellipse cx="185" cy="282" rx="17" ry="9" fill="#F59AAE" opacity=".8"/><ellipse cx="343" cy="282" rx="17" ry="9" fill="#F59AAE" opacity=".8"/>
+  <path d="M243 324c-9 29-4 53 13 72 17-19 22-43 13-72" fill="#D8F6ED" opacity=".9"/>
+  <circle cx="393" cy="136" r="11" fill="#F6C76E"/><path d="m419 183 7 15 16 2-12 11 3 16-14-8-14 8 3-16-12-11 16-2 7-15Z" fill="#FFF5C8"/>
+</svg>

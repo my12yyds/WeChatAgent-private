@@ -1,0 +1,4 @@
+export function setup(api){
+ api.registerTool({id:'tasks',description:'仅供真实管理员查询本聊天的 DSH 任务列表、进度、结果和能力，或在管理员明确要求取消时取消指定任务。不把状态查询当作完成，不重复提交任务。任务执行由本聊天已授权的 DSH 工具承担，直接按用户需求使用已授权的工具；需要审批时等待原生审批。',parameters:{type:'object',properties:{action:{type:'string',enum:['list','status','result','cancel','capabilities']},taskId:{type:'string'},evidenceId:{type:'string'}},required:['action'],additionalProperties:false},execute:async(ctx,args)=>({content:JSON.stringify(await ctx.dshTasks.control(args))})});
+}
+export const hooks={'before-context':async ctx=>({context:ctx.actor?.administrator?'[管理员 DSH 助手]\n发送者身份由本机核验。用户提出实际任务时，复用本聊天已授权的 DSH 原生工具和工作区完成；聊天模式须在本机开启管理员调用并逐项授权，聊天模式的工具在当前轮执行，不创建助手任务队列；不是只给操作建议。不擅自宣称成功。普通问题直接回答，工具请求按需执行。耗时任务沿用原生进度反馈，审批仍由 DSH 处理；不得通过本插件越过工具权限、扩大工作区或代用户批准审批。':'[管理员 DSH 助手]当前发送者未通过管理员核验，不能执行任务或取得任务结果。'})};

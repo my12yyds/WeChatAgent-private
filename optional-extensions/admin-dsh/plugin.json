@@ -1,0 +1,18 @@
+{
+  "id": "admin-dsh",
+  "name": "管理员 DSH 助手",
+  "version": "1.1.0",
+  "apiVersion": 2,
+  "host": "wechatagent",
+  "author": "my12yyds",
+  "description": "管理员在聊天或助手模式中按本聊天授权调用 DSH，支持能力查询、任务进度、结果与取消。聊天模式保留人格和历史，默认关闭调用权限。",
+  "permissions": [
+    "dsh_tasks"
+  ],
+  "requiresHostFeatures": [
+    "admin-dsh-v1",
+    "chat-dsh-access-v1"
+  ],
+  "settings": {},
+  "configSchema": {}
+}
