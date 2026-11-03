@@ -8,6 +8,6 @@ export const BUNDLED_PLUGINS = Object.freeze([
   Object.freeze({id: 'people-memory', name: '跨聊天人物记忆', version: '1.1.0', source: 'optional-extensions/people-memory', zip: 'optional-extensions/packages/people-memory-1.1.0.zip'}),
   Object.freeze({id: 'persona-moments', name: '人格定时朋友圈', version: '0.3.1', source: 'optional-extensions/persona-moments', zip: 'optional-extensions/packages/persona-moments-0.3.1.zip'}),
   Object.freeze({id: 'persona-studio', name: 'AI 人格工作室', version: '1.1.0', source: 'optional-extensions/persona-studio', zip: 'optional-extensions/packages/persona-studio-1.1.0.zip'}),
-  Object.freeze({id: 'speech-recognition', name: '微信语音识别', version: '1.2.0', source: 'optional-extensions/speech-recognition', zip: 'optional-extensions/packages/speech-recognition-1.2.0.zip', files:['README.md','index.mjs','lib/recognize.mjs','lib/diagnostics.mjs','plugin.json','assets/config-test.wav']}),
+  Object.freeze({id: 'speech-recognition', name: '微信语音识别', version: '1.3.0', source: 'optional-extensions/speech-recognition', zip: 'optional-extensions/packages/speech-recognition-1.3.0.zip', files:['README.md','LICENSE','UPSTREAM.json','index.mjs','lib/recognize.mjs','lib/diagnostics.mjs','plugin.json','assets/config-test.wav']}),
   Object.freeze({id: 'voice-studio', name: '语音工作室', version: '1.3.0', source: 'optional-extensions/voice-studio', zip: 'optional-extensions/packages/voice-studio-1.3.0.zip'}),
 ]);

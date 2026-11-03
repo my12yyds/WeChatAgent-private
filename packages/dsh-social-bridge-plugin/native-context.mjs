@@ -924,6 +924,20 @@ export function apply(ctx, config={}) {
       try{const chunks=[];let size=0;for await(const chunk of req){size+=chunk.length;if(size>1100000)throw Error('VISION_TEST_INVALID');chunks.push(chunk);}const body=JSON.parse(Buffer.concat(chunks).toString('utf8'));return reply(200,await visionFallback.test(body,{signal:controller.signal}));}
       catch(error){const code=/^(VISION|IMAGE)_[A-Z_]+$/.test(error.message??'')?error.message:'VISION_TEST_FAILED';return reply(400,{error:code});}
     }
+    if(req.method==='POST'&&req.url==='/voice-input'){
+      const controller=new AbortController(),closed=()=>{if(!res.writableEnded)controller.abort();};res.once('close',closed);
+      try{
+        const chunks=[];let size=0;for await(const chunk of req){size+=chunk.length;if(size>4096)throw Error('VOICE_REQUEST_INVALID');chunks.push(chunk);}
+        const body=JSON.parse(Buffer.concat(chunks)),key=body.conversationKey;
+        if(!/^[a-f0-9]{64}$/.test(body.id??''))throw Error('VOICE_REFERENCE_INVALID');
+        const settings=JSON.parse(fs.readFileSync(path.join(root,'config/wechatagent.json'),'utf8').replace(/^\uFEFF/,''));
+        if(!allowedConversation(settings.wechat,key)||internalGroupChat||readWorkMode(root,key)==='assistant'&&!assistantSenderAllowed(settings.wechat,key,body.senderWxid))return reply(403,{ok:false,code:'VOICE_INPUT_NOT_ALLOWED'});
+        const extension=await extensions();if(!extension)return reply(503,{ok:false,code:'VOICE_HOST_UNAVAILABLE'});
+        const result=await extension.runtime.invokeAction('speech-recognition','transcribe',{id:body.id},{conversationKey:key,actorId:body.senderWxid??'',voiceIds:[body.id]},{signal:controller.signal,timeoutMs:33000});
+        return reply(200,result?.handled===false?{ok:false,code:'VOICE_PLUGIN_DISABLED'}:result);
+      }catch(error){const code=/^VOICE_[A-Z0-9_]{3,80}$/.test(error.message??'')?error.message:'VOICE_INPUT_FAILED';return reply(503,{ok:false,code});}
+      finally{res.removeListener('close',closed);}
+    }
     const pluginActionRoute=/^\/plugin-actions\/([a-z][a-z0-9-]{0,39})\/([a-z][a-z0-9-]{0,19})$/.exec(req.url);
     if(req.method==='POST'&&(['/fish-notebook/ask','/fish-notebook/write'].includes(req.url)||pluginActionRoute)){
       try{const chunks=[];let size=0;for await(const chunk of req){size+=chunk.length;if(size>MAX_RPC_BYTES)throw Error('NOTEBOOK_REQUEST_TOO_LARGE');chunks.push(chunk);}const body=JSON.parse(Buffer.concat(chunks)),key=body.conversationKey,settings=JSON.parse(fs.readFileSync(path.join(root,'config/wechatagent.json'),'utf8').replace(/^\uFEFF/,''));if(!allowedConversation(settings.wechat,key))return reply(403,{error:'chat_not_allowed'});

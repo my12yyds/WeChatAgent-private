@@ -1,6 +1,6 @@
 # GitHub 源码与 Release 发布
 
-当前仓库地址为 my12yyds/WeChatAgent-private，默认分支 main。仓库现按维护者要求公开，仅保留 0.5.1 的源码快照和发行附件；上传前仍需核对实际访问范围，所有提交和附件均排除用户数据。普通版本更新保留提交、标签、Issues 和 PR，不重用以前的清空授权。
+当前仓库地址为 my12yyds/WeChatGirl，默认分支 main。仓库现按维护者要求公开；0.5.1 为历史基线，此后按普通版本迭代保留历史；上传前仍需核对实际访问范围，所有提交和附件均排除用户数据。普通版本更新保留提交、标签、Issues 和 PR，不重用以前的清空授权。
 
 ## 顺序
 
@@ -12,12 +12,12 @@
 
 ## 命令示例
 
-以下是 0.5.1 **完成构建后**的示例，需要本机 GitHub CLI 已安装并有写入权限。附件位于源码仓库外的发行目录，不能照抄旧版相对路径。遇到同名标签先检查归属，不覆盖已有版本。
+以下是 0.5.2 **完成构建后**的示例，需要本机 GitHub CLI 已安装并有写入权限。附件位于源码仓库外的发行目录，不能照抄旧版相对路径。遇到同名标签先检查归属，不覆盖已有版本。
 
 ```powershell
-$releaseVersion = '0.5.1'
+$releaseVersion = '0.5.2'
 $releaseTag = "v$releaseVersion"
-$releaseOutput = 'D:\weixiagen\release\artifacts-0.5.1'
+$releaseOutput = 'D:\weixiagen\release\artifacts-0.5.2'
 git fetch origin
 git status --short --branch
 git diff --check
@@ -32,7 +32,7 @@ $releaseAssets = @(
   "$releaseOutput\SHA256SUMS.txt",
   "$releaseOutput\VERIFICATION.json"
 )
-gh release create $releaseTag --repo my12yyds/WeChatAgent-private --verify-tag --title "WeChatGirl $releaseVersion" --notes-file "docs/releases/$releaseVersion.md" $releaseAssets
+gh release create $releaseTag --repo my12yyds/WeChatGirl --verify-tag --title "WeChatGirl $releaseVersion" --notes-file "docs/releases/$releaseVersion.md" $releaseAssets
 ```
 
 可选语音附件只有实际构建成功时才列入上传。安装器、便携包和大型组件不放 Git 源码历史。上传后重新核对远端附件哈希；尚未执行的检查不能写成通过，不把 VERIFICATION.json 的基础元数据自动当作完整验收报告。

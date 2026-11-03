@@ -47,6 +47,21 @@ export async function auditPluginHost(root,{compareRoot,requireZips=true}={}){
     ['scripts/project-config.mjs','PLUGIN_HOST_FILES'],
   ];
   for(const [file,marker]of checks)if(!fs.existsSync(path.join(root,file))||!read(file).toString('utf8').includes(marker))problem(file,'PLUGIN_HOST_INTEGRATION_STALE');
+  const voiceWiring=[
+    ['scripts/reader-api.py','self.voices = VoiceCatalog('],
+    ['scripts/reader-api.py','def resolve_voice('],
+    ['scripts/hook-onebot.mjs','voice_id:payload.voice.id'],
+    ['components/qq-bridge/src/onebot/normalize.js','voice_id'],
+    ['components/qq-bridge/src/social-bridge.js','new VoiceIngress('],
+    ['components/qq-bridge/src/social-bridge.js','voiceIngress.push(message)'],
+    ['components/qq-bridge/src/dsh/plugin-client.js',"this.url+'/voice-input'"],
+    ['packages/dsh-social-bridge-plugin/native-context.mjs',"invokeAction('speech-recognition','transcribe'"],
+    ['packages/plugin-api/index.mjs',"if(method==='audio.read')"],
+    ['packages/plugin-api/worker.mjs','audio:Object.freeze'],
+    ['scripts/console-server.mjs','speechChecks.run('],
+    ['public/console/plugins.js','speechBinding=bindSpeechSettings('],
+  ];
+  for(const[file,marker]of voiceWiring)if(!fs.existsSync(path.join(root,file))||!read(file).toString('utf8').includes(marker))problem(file,'VOICE_INPUT_WIRING_INCOMPLETE');
   for(const bundle of bundled.BUNDLED_PLUGINS){
     try{
       const source=path.join(root,bundle.source),item=catalog.inspectPackage(source);

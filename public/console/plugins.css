@@ -9,3 +9,21 @@
 
 @media(prefers-reduced-motion:reduce){.button:active,.icon-button:active{transform:none}}
 .vision-test-panel{border-top:1px solid var(--border);margin-top:20px;padding-top:18px}.vision-test-panel>summary{cursor:pointer;font-weight:600;font-size:14px;color:var(--accent-text)}.vision-test-panel>p{line-height:1.7;margin:14px 0}.vision-test-controls{display:flex;align-items:center;flex-wrap:wrap;gap:14px;margin:14px 0}.vision-test-controls>.field{flex:1;min-width:200px}#vision-test-preview{display:block;max-width:100%;max-height:260px;border:1px solid var(--border);border-radius:12px;object-fit:contain;margin:16px 0;background:var(--surface-2)}.vision-test-output{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;font-size:13px;line-height:1.8;padding:18px;background:var(--surface-2);border:1px solid var(--border);border-radius:12px;max-height:400px;overflow:auto}.vision-test-panel .button-row{flex-wrap:wrap;gap:10px}#vision-model-selection{max-width:100%;text-overflow:ellipsis}
+.speech-service-panel{padding:18px;margin:18px 0;border:1px solid var(--border);border-radius:14px;background:var(--surface-2,var(--surface))}
+.speech-service-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.speech-service-panel p,.speech-service-panel small{line-height:1.7;overflow-wrap:anywhere}
+.speech-service-checks{padding:0;list-style:none;display:grid;gap:10px}
+.speech-check{font-size:13px;line-height:1.7;overflow-wrap:anywhere}
+.speech-check>span{display:inline-block;margin-right:10px;color:var(--muted)}
+.speech-check.error>span{color:var(--danger,var(--accent-text))}
+.speech-check small,.speech-check q{display:block;color:var(--muted)}
+.speech-service-actions{display:flex;flex-wrap:wrap;gap:10px;margin:16px 0}
+.speech-model-field{grid-column:1/-1;min-width:0}
+.speech-model-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px}
+.speech-model-row select,.speech-model-row input{min-width:0;max-width:100%}
+.speech-advanced{border-top:1px solid var(--border);margin-top:20px;padding-top:16px}
+.speech-advanced>summary{cursor:pointer;font-weight:600;line-height:1.7}
+.speech-advanced[open]>.form-grid{margin-top:16px}
+.speech-card-status{display:grid;gap:8px;line-height:1.6}
+.speech-card-status small{color:var(--muted);overflow-wrap:anywhere}
+@media(max-width:650px){.speech-model-row{grid-template-columns:minmax(0,1fr)}.speech-service-panel{padding:14px}.speech-service-actions>.button{flex:1;white-space:normal}}

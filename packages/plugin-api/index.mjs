@@ -11,14 +11,16 @@ import {boundedTask} from '../dsh-social-bridge-plugin/deadline.mjs';
 import {dailyScheduleIdentity,scheduleCompleted} from './daily-schedule.mjs';
 import {VoiceJobs,voiceRequest} from '../voice-studio/jobs.mjs';
 import {SavedSongs} from '../voice-studio/saved-songs.mjs';
+import {createAudioReader} from './audio.mjs';
 export {createPluginModelUtility} from './model-utility.mjs';
 export const TOOL_POLICY=Symbol.for('wechatagent.extension-tools.v1');
 
 const text=value=>String(value??'').slice(0,12000);
 export class PluginRuntime{
-  constructor({root,accountScope='unbound',isAllowed=()=>true,historyFor=()=>[],rowsForDate=()=>[],personaFor=()=>{throw fail('PLUGIN_PERSONA_UNAVAILABLE');},generateText,taskControl,requestMedia,voiceJobs,isBusy=()=>false,canSchedule=()=>true,now=Date.now,log=()=>{},fetchText=safeFetch,toolTimeoutMs=8000}){
+  constructor({root,accountScope='unbound',isAllowed=()=>true,historyFor=()=>[],rowsForDate=()=>[],personaFor=()=>{throw fail('PLUGIN_PERSONA_UNAVAILABLE');},generateText,readAudio,taskControl,requestMedia,voiceJobs,isBusy=()=>false,canSchedule=()=>true,now=Date.now,log=()=>{},fetchText=safeFetch,toolTimeoutMs=8000}){
     this.root=path.resolve(root);this.accountScope=hash(accountScope);this.isAllowed=isAllowed;this.historyFor=historyFor;this.log=log;this.fetchText=fetchText;
     this.records=new Map();this.dirty=true;this.revision='';this.closed=false;
+    this.readAudio=readAudio??createAudioReader(root);
     this.accountBound=accountScope!=='unbound'&&!!accountScope;this.accountId=/^[a-f0-9]{64}$/.test(accountScope)?accountScope:hash(accountScope);Object.assign(this,{rowsForDate,personaFor,generateText,taskControl,requestMedia,voiceJobs:voiceJobs??new VoiceJobs(this.root),isBusy,canSchedule,now});this.utilityCalls=0;this.scheduleRetry=new Map();this.voiceCooldown=new Map();
     this.toolTimeoutMs=Math.max(20,Math.min(8000,toolTimeoutMs));
     const base=directory(root,'plugins');try{this.watcher=fs.watch(base,{recursive:true},()=>{this.dirty=true;});this.watcher.on('error',()=>{this.dirty=true;});this.watcher.unref();}catch{}
@@ -98,6 +100,13 @@ export class PluginRuntime{
       }
       const limit=method.startsWith('documents.')?1100000:method==='model.generate'?128*1024:64*1024;
       if(!Array.isArray(args)||Buffer.byteLength(JSON.stringify(args))>limit)throw fail('PLUGIN_SERVICE_ARGUMENT_INVALID');
+      if(method==='audio.read'){
+        check('audio_read');if(readOnly)throw fail('PLUGIN_HOOK_READ_ONLY');
+        const [id,options]=args;
+        if(!this.accountBound||!turn.voiceIds?.includes(id)||!options||Object.keys(options).some(key=>key!=='format')||!['wav','silk'].includes(options.format??'wav'))throw fail('VOICE_REFERENCE_NOT_ALLOWED');
+        const result=await this.readAudio(id,turn.conversationKey,record.id,{...options,signal});
+        check('audio_read');return result;
+      }
       if(method.startsWith('documents.')){
         check('documents');const documents=new PluginDocuments(this.root,this.accountScope,this.accountId,record);
         if(method==='documents.get')return documents.get(turn.conversationKey,args[0]);

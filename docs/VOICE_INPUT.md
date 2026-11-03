@@ -1,6 +1,8 @@
 # 微信语音 API 转写
 
-可选插件源码位于 `optional-extensions/speech-recognition/`，可导入包为 `optional-extensions/packages/speech-recognition-1.2.0.zip`。安装、授权和配置说明见该目录 README。本功能不预设 API 地址、服务商、模型或密钥。
+可选插件源码位于 `optional-extensions/speech-recognition/`，可导入包为 `optional-extensions/packages/speech-recognition-1.3.0.zip`。基于 sourcepro5/WeChatAgent 固定提交 `38c1060ce500a294d69a4a2f9e07ca1b63a08b06`，来源和许可随包保留。本功能不预设 API 地址、服务商、模型或密钥。
+
+1.3.0 补齐本项目中原先缺失的读取器 → OneBot → 语音排队 → DSH 动作 → 插件受控读音频 → 转写 → 原聊天回复链路，配置页接入协议、模型和检测区域。它要求宿主 `voice-input-route-v1`，不能只看旧宿主的 `voice-input-v1` 声明。加载配套源码后需完整重开 DSH 与后台；已发布 0.5.1 安装附件不自动包含本次未发布修改。
 
 当前配置页可自动读取接口返回的模型，并分别显示转换组件和识别接口检测结果。模型列表不等于转写能力证明；“检测配置”只上传内置合成测试短句，不使用聊天语音，也不自动启用插件。接口不支持模型列表时保留手动输入，特殊目录可填写模型列表 URL 与 JSON 路径。
 

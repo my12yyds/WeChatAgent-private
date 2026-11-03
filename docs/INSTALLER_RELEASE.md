@@ -1,13 +1,13 @@
 # Windows 安装、升级与发行包
 
-本文说明 0.5.1 的发行整理目标及通用安装规则。**本机新版本附件已构建，上传状态以 Release 为准**，实际下载以[GitHub Releases](https://github.com/my12yyds/WeChatAgent-private/releases)为准，不把文档里的文件名当作附件已存在。
+本文说明当前源码的 Windows 打包方式。0.5.2 改用图形安装流程；旧 0.5.1 附件保持原样；实际公开下载以 [GitHub Releases](https://github.com/my12yyds/WeChatGirl/releases) 为准。
 
 ## 包与依赖
 
 | 附件 | 用途 |
 | --- | --- |
-| WeChatGirl-Setup-0.5.1-x64.exe | Windows x64 安装器 |
-| WeChatGirl-0.5.1-portable-x64.zip | 解压后运行 Start-WeChatGirl.cmd 或 app/WeChatGirl.exe |
+| WeChatGirl-Setup-0.5.2-x64.exe | 新构建使用 Electron Builder + NSIS 中文图形安装器，旧附件保持原样 |
+| WeChatGirl-0.5.2-portable-x64.zip | 新构建解压后双击根目录 WeChatGirl.exe 或 app/WeChatGirl.exe；不弹出命令窗口 |
 | WeChatGirl-voice-components.zip | 可选语音运行组件，具体内容以归档清单为准 |
 | SHA256SUMS.txt | 核对附件完整性 |
 | VERIFICATION.json | 当前构建元数据；具体测试范围另见同版本日志 |
@@ -22,12 +22,29 @@
 
 首次启动默认配置向导，初始聊天允许范围为空。新导航、音乐、发送模式及插件与聊天页见[界面说明](UI_LAYOUT.md)。名字变化不改变稳定插件 ID，旧数据目录继续兼容。
 
-窗口“×”收起到托盘；退出程序有序停止本实例服务，保留外部微信与 DSH。卸载移除程序并保留 data 与存储定位信息，用户数据清理需单独处理。详见[数据位置](DATA_STORAGE.md)、[退出行为](EXIT_SHUTDOWN.md)。
+窗口“×”收起到托盘；退出程序有序停止本实例服务，保留外部微信与 DSH。图形安装器遇到程序占用时提示保存并完整退出，可重试或取消，不自动强制结束进程。新版卸载入口位于 Windows“已安装的应用”和 app/Uninstall WeChatGirl.exe；卸载仅删除安装时记录的程序文件，保留 data、storage.ini 及额外放入的文件，用户数据清理需单独处理。详见[数据位置](DATA_STORAGE.md)、[退出行为](EXIT_SHUTDOWN.md)。
 
 ## 构建边界
 
 scripts/sync-and-package.ps1 基于审计后的现有 Windows 发行基线同步源码并生成部署清单；scripts/build-release.ps1 从隔离载荷生成便携 ZIP、安装器、可选语音 ZIP 与校验文件。脚本不是完整第三方二进制重建工具链。
 
-源版本、安装器和脚本默认值已调整为 0.5.1；部署元数据在隔离构建时重新生成，不能复用旧清单。九个产品插件从唯一清单生成可导入 ZIP；用户已安装插件、账号配置和 state 不随包复制。
+Windows 安装组件参考[原项目固定提交](https://github.com/sourcepro5/WeChatAgent/blob/38c1060ce500a294d69a4a2f9e07ca1b63a08b06/scripts/build-installer.mjs)，构建工具单独锁定，不加入应用运行依赖：
+
+```powershell
+npm ci --prefix packaging/windows --ignore-scripts --no-audit --no-fund
+.\scripts\sync-and-package.ps1 -Version 0.5.2 -StagingDirectory 'D:\发布暂存\WeChatGirl-0.5.2' -OutputDirectory 'D:\发布产物\WeChatGirl-0.5.2'
+```
+
+按本机审计基线显式指定 `-Baseline` 和 `-ClientRoot`。如使用独立工具目录，可设置 `WECHATGIRL_BUILDER_HOME` 指向具有锁定 electron-builder 26.15.3 的目录。首次构建由 builder 获取固定版本的 NSIS 编译资源；无须运行第三方安装向导安装编译器。启动 EXE 由系统 .NET Framework 编译器生成，使用 Windows GUI 子系统。
+
+`scripts/build-windows-installer.mjs` 只读取构建脚本审查后的文件清单，在临时目录复制干净的程序文件再交给 builder。它不把活动 data 或用户插件作为安装资源。卸载清单只列确切文件，目录仅在清空后移除，不递归删除整个安装目录。原项目的目录选择模板在独立副本中适配；上游结构变化会停止构建，避免静默产生错误布局。
+
+同步脚本按桥接插件的现有锁文件安装必需运行依赖，禁用安装脚本，不复制活动环境的 node_modules。打包前由内置 Node 执行 SDK 与控制台的真实模块导入检查，避免开发机已有依赖掩盖干净安装的缺项；该检查不启动服务、不连接或发送聊天。
+
+维护测试可给 `build-release.ps1` 加 `-InstallerTestMode`，使用独立的测试应用标识、注册表路径并关闭快捷方式；测试包不能作为正式版本发布。先完成中文路径新装、原位升级、自定义数据位置、程序占用拒绝和卸载保留验证，再生成普通候选包。编译器、源码、便携包及标准卸载器都不要求用户打开 CMD。
+
+对隔离测试包运行 `scripts/test-windows-package.ps1 -TestSetup <测试安装包> -Launcher <新启动器> -TestDirectory <不存在的测试目录>`，自动验证中文路径安装、升级、卸载、占用时拒绝修改、数据保留及启动环境。脚本拒绝普通正式安装包，不向真实聊天发消息；结果写入测试目录的 RESULTS.json。
+
+源版本、安装器和脚本默认值已调整为 0.5.2；部署元数据在隔离构建时重新生成，不能复用旧清单。九个产品插件从唯一清单生成可导入 ZIP；用户已安装插件、账号配置和 state 不随包复制。
 
 发行前按[发行流程](RELEASE_WORKFLOW.md)审查来源、许可、包体积和归档隐私。SHA256 证明完整性，不证明软件签名、全部功能可用或跨设备验收通过。安装器签名状态、实际隔离测试及未覆盖设备在版本日志如实记录。

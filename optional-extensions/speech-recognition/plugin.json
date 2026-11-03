@@ -1,17 +1,18 @@
 {
   "id": "speech-recognition",
-  "name": "语音识别 API",
-  "version": "1.2.0",
+  "name": "微信语音识别",
+  "version": "1.3.0",
   "apiVersion": 2,
   "host": "wechatagent",
-  "author": "WeChatGirl",
-  "description": "将当前聊天收到的微信语音上传至自己配置的识别接口，转写后交给原聊天模型。未配置接口时不上传音频。",
+  "author": "sourcepro5 / WeChatGirl",
+  "description": "识别好友和群聊收到的微信语音，再由当前聊天模型回复。可读取接口模型并检测配置；需自行填写语音API，未配置、未授权的聊天不上传音频。",
   "permissions": [
     "audio_read"
   ],
   "requiresHostFeatures": [
     "actions-v1",
-    "voice-input-v1"
+    "voice-input-v1",
+    "voice-input-route-v1"
   ],
   "requiresAccount": true,
   "settings": {

@@ -63,6 +63,6 @@ DSH 插件与 WeChatGirl ZIP 插件是不同生命周期；完整重开 DSH 才�
 
 ## 名称与兼容
 
-界面使用 WeChatGirl。以下标识需保留或经过独立迁移，不能全局替换：host: wechatagent、/WeChatAgent/*、X-WeChatAgent-*、wechatagent.json、WECHATAGENT_*、旧数据目录/进程识别及上游署名。仓库当前地址仍为 my12yyds/WeChatAgent-private，名称不决定仓库可见性。
+界面使用 WeChatGirl。以下标识需保留或经过独立迁移，不能全局替换：host: wechatagent、/WeChatAgent/*、X-WeChatAgent-*、wechatagent.json、WECHATAGENT_*、旧数据目录/进程识别及上游署名。仓库当前地址仍为 my12yyds/WeChatGirl，名称不决定仓库可见性。
 
 继续阅读：[目录边界](docs/PROJECT_LAYOUT.md) · [迭代流程](docs/ITERATION_WORKFLOW.md) · [路线图](docs/ROADMAP.md) · [数据管理](docs/DATA_STORAGE.md) · [品牌兼容](docs/BRANDING.md)。

@@ -1,4 +1,8 @@
-# 许可证与来源（源码发布副本）
+﻿# 许可证与来源（源码发布副本）
+
+## 微信语音识别插件与接收链路
+
+`optional-extensions/speech-recognition` 基于 [sourcepro5/WeChatAgent](https://github.com/sourcepro5/WeChatAgent/tree/38c1060ce500a294d69a4a2f9e07ca1b63a08b06/optional-extensions/speech-recognition) 的 1.2.0 实现，固定参考提交 `38c1060ce500a294d69a4a2f9e07ca1b63a08b06`。保留上游 MIT 通知于插件目录 `LICENSE`，来源与适配范围见 `UPSTREAM.json`。本项目补齐读取器、OneBot、DSH、插件 worker 与配置页的集成，沿用当前账号、聊天、消息绑定及显式权限。语音专项回归取自同一提交并按本项目环境适配；不包含用户音频或服务凭据。
 
 本目录是源码发布副本，不是本机运行目录的完整打包。根目录 LICENSE 保留原作者版权与许可文本，不能替代独立第三方依赖、桌面软件、模型服务和平台接口各自的授权。
 
@@ -22,6 +26,10 @@
 - 本项目覆盖层不包含第三方 Hook 的原实现，编译与运行仍有独立授权及兼容性前置条件。
 
 公开可见不等于一般再分发许可，见 [GitHub 许可说明](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/licensing-a-repository)。本说明不是法律或平台授权保证，也不自动授予商标、账号数据或独立第三方内容的权利。
+
+## Windows 安装组件
+
+Windows 图形安装链路参考 [sourcepro5/WeChatAgent](https://github.com/sourcepro5/WeChatAgent/tree/38c1060ce500a294d69a4a2f9e07ca1b63a08b06)（MIT）：`packaging/windows/installer-storage.nsh` 与 `scripts/installer-directory-page.mjs` 在该提交基础上适配 WeChatGirl，新增按清单卸载、程序占用检查和旧安装迁移；上游版权与许可保留在根 `LICENSE`。构建工具固定为 electron-builder 26.15.3（MIT），使用其标准 NSIS 安装/卸载组件，工具依赖单独锁定于 `packaging/windows/`，不随项目运行加载。
 
 ## Weather data services
 

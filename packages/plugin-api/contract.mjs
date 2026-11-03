@@ -1,7 +1,7 @@
 // Pure shared data: installer, runtime, worker, DSH health and console UI use it.
 export const API_VERSION = 2;
 export const HOST_RUNTIME = 'isolated-v2';
-export const CONTRACT_REVISION = 'wechatagent-plugin-v2.3';
+export const CONTRACT_REVISION = 'wechatagent-plugin-v2.4';
 export const PERMISSION_LABELS = Object.freeze({
   storage: '保存插件数据',
   history_read: '读取当前聊天历史',
@@ -31,6 +31,7 @@ export const FEATURE_LABELS = Object.freeze({
   'saved-songs-v1': '翻唱成品保存与制作进度',
   'public-media-v1': '网易云音乐与哔哩哔哩公开内容',
   'voice-input-v1': '微信语音输入',
+  'voice-input-route-v1': '语音接收、转写与回复完整链路',
   'native-voice-v1': '原生语音与唱歌',
   'people-memory-auto-v1':'明确人物事实自动保存与上下文召回',
   'people-memory-v1': '人物记忆',

@@ -11,7 +11,7 @@
 | `people-memory` | 跨聊天人物记忆 | 1.1.0 |
 | `persona-moments` | 人格定时朋友圈 | 0.3.1 |
 | `persona-studio` | AI 人格工作室 | 1.1.0 |
-| `speech-recognition` | 微信语音识别 | 1.2.0 |
+| `speech-recognition` | 微信语音识别 | 1.3.0 |
 | `voice-studio` | 语音工作室 | 1.3.0 |
 
 重新打包后会校验 ZIP 可读性并生成 SHA-256 文件。ZIP 只包含插件源码和明确登记的文件，不带账号配置、记忆、Cookie 或本机运行数据。导入后仍默认关闭，用户需自行配置权限、聊天范围并启用。插件宿主能力及版本限制见 `../../docs/PLUGIN_HOST_AUDIT.md` 与各插件 README。

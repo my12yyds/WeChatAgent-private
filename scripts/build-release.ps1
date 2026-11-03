@@ -1,8 +1,9 @@
-param(
+﻿param(
   [Parameter(Mandatory=$true)][string]$PayloadRoot,
   [Parameter(Mandatory=$true)][string]$OutputDirectory,
-  [string]$Version = '0.5.1',
-  [switch]$Resume
+  [string]$Version = '0.5.2',
+  [switch]$Resume,
+  [switch]$InstallerTestMode
 )
 
 $ErrorActionPreference = 'Stop'
@@ -11,7 +12,7 @@ $payload = (Resolve-Path -LiteralPath $PayloadRoot).Path.TrimEnd('\')
 $out = [IO.Path]::GetFullPath($OutputDirectory)
 if (-not (Test-Path -LiteralPath $out)) { New-Item -ItemType Directory -Path $out | Out-Null }
 $out = (Resolve-Path -LiteralPath $out).Path
-if ($out.StartsWith($payload + '\', [StringComparison]::OrdinalIgnoreCase)) { throw 'OutputDirectory must be outside PayloadRoot.' }
+if ($out -eq $payload -or $out.StartsWith($payload + '\', [StringComparison]::OrdinalIgnoreCase)) { throw 'OutputDirectory must be outside PayloadRoot.' }
 if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw 'Version must use major.minor.patch format.' }
 
 $exe = Join-Path $payload 'app/WeChatGirl.exe'
@@ -24,6 +25,10 @@ if (-not (Test-Path -LiteralPath $exe) -and (Test-Path -LiteralPath $oldExe)) {
 if (-not (Test-Path -LiteralPath $exe)) { throw 'Payload is missing app/WeChatGirl.exe.' }
 if (-not (Test-Path -LiteralPath (Join-Path $payload 'app/resources/project/public/console/index.html'))) { throw 'Payload is missing the application workspace.' }
 if (-not (Test-Path -LiteralPath (Join-Path $payload 'app/resources/app/main.cjs'))) { throw 'Payload is missing the Electron desktop shell.' }
+if (!$InstallerTestMode) {
+  & node (Join-Path $repo 'scripts/verify-package-runtime.mjs') $payload
+  if($LASTEXITCODE -ne 0){throw 'The isolated packaged runtime import check failed; no release was generated.'}
+}
 
 $portableName = "WeChatGirl-$Version-portable-x64.zip"
 $setupName = "WeChatGirl-Setup-$Version-x64.exe"
@@ -34,11 +39,12 @@ $voicePath = Join-Path $out $voiceName
 if (!$Resume) { foreach ($file in @($portablePath,$setupPath,$voicePath)) { if (Test-Path -LiteralPath $file) { throw "Release output already exists: $file" } } }
 if ($Resume) { foreach ($file in @($portablePath,$setupPath,$voicePath,(Join-Path $out 'SHA256SUMS.txt'),(Join-Path $out 'VERIFICATION.json'))) { if (Test-Path -LiteralPath $file) { [IO.File]::Delete($file) } } }
 
+& (Join-Path $repo 'scripts/build-launcher.ps1') -OutputPath (Join-Path $payload 'WeChatGirl.exe')
 Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $files = Get-ChildItem -LiteralPath $payload -File -Recurse | Where-Object {
   $rel = $_.FullName.Substring($payload.Length + 1).Replace('\','/')
-  $rel -notmatch '(^|/)\.git(/|$)|(^|/)__pycache__(/|$)|(^|/)(?:\.temp|Cache)(/|$)|\.pyc$|^data/\.wechatagent-data\.json$|(^|/)data/workspace/state(/|$)|(^|/)data/workspace/plugins(/|$)|(^|/)data/desktop/(?:runtime\.json|session)(?:/|$)|\.lock$' -and
+  $rel -notmatch '^(?:Start-WeChatGirl|Start-WeChatAgent)\.cmd$|^app/(?:uninstall\.exe|Uninstall WeChat(?:Girl|Agent)\.exe|uninstallerIcon\.ico)$|(^|/)\.git(/|$)|(^|/)__pycache__(/|$)|(^|/)(?:\.temp|Cache)(/|$)|\.pyc$|^data/\.wechatagent-data\.json$|(^|/)data/workspace/state(/|$)|(^|/)data/workspace/plugins(/|$)|(^|/)data/desktop/(?:runtime\.json|session)(?:/|$)|\.lock$' -and
     $rel -notmatch '^data/voice-(?:python|wsl)(?:/|$)' -and
     ($rel -notmatch '^app/locales/[^/]+\.pak$' -or $rel -match '^app/locales/(?:en-US|zh-CN)\.pak$')
 }
@@ -82,43 +88,23 @@ if ($voiceRoots.Count -and !(Test-Path -LiteralPath $voicePath)) {
   } finally { $voice.Dispose() }
 }
 
-$cscCandidates = @(
-  (Join-Path $env:WINDIR 'Microsoft.NET/Framework64/v4.0.30319/csc.exe'),
-  (Join-Path $env:WINDIR 'Microsoft.NET/Framework/v4.0.30319/csc.exe')
-)
-$csc = $cscCandidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
-if (-not $csc) { throw 'C# compiler not found; install the .NET Framework developer tools.' }
-$installerSource = Join-Path $repo 'packaging/windows/Installer.cs'
-$uninstallSource = Join-Path $repo 'packaging/windows/Uninstall.cs'
-$assemblyInfo = Join-Path $repo 'packaging/windows/AssemblyInfo.cs'
-$icon = Join-Path $repo 'desktop/icon.ico'
-$uninstaller = Join-Path $out 'uninstall-build.exe'
-$stub = Join-Path $out 'installer-stub.exe'
-& $csc /nologo /target:exe /out:$uninstaller /win32icon:$icon $uninstallSource
-if ($LASTEXITCODE -ne 0) { throw 'Uninstaller compilation failed.' }
-& $csc /nologo /target:exe /out:$stub /win32icon:$icon /resource:"$uninstaller,Uninstall.exe" /reference:System.IO.Compression.dll /reference:System.IO.Compression.FileSystem.dll $installerSource $assemblyInfo
-if ($LASTEXITCODE -ne 0) { throw 'Installer compilation failed.' }
-
-$footer = $null
-if ($Resume -and (Test-Path -LiteralPath $setupPath)) { [IO.File]::Delete($setupPath) }
-$installerStream = [IO.File]::Open($setupPath, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write)
+$fileList = Join-Path $out 'installer-file-list.json'
 try {
-  $stubBytes = [IO.File]::ReadAllBytes($stub)
-  $installerStream.Write($stubBytes,0,$stubBytes.Length)
-  $zipStream = [IO.File]::OpenRead($portablePath)
-  try { $zipStream.CopyTo($installerStream,1048576); $zipLength = $zipStream.Length } finally { $zipStream.Dispose() }
-  $footer = [System.BitConverter]::GetBytes([Int64]$zipLength) + [Text.Encoding]::ASCII.GetBytes('WXSFX001')
-  $installerStream.Write($footer,0,$footer.Length)
-} finally { $installerStream.Dispose() }
+  @($files | ForEach-Object { $_.FullName.Substring($payload.Length + 1).Replace('\','/') }) | ConvertTo-Json | Set-Content -LiteralPath $fileList -Encoding utf8
+  $installerArgs = @((Join-Path $repo 'scripts/build-windows-installer.mjs'),$payload,$out,$Version,$fileList)
+  if($InstallerTestMode){$installerArgs+='--test'}
+  & node @installerArgs
+  if($LASTEXITCODE -ne 0){throw 'NSIS installer build failed.'}
+} finally { if(Test-Path -LiteralPath $fileList){[IO.File]::Delete($fileList)} }
 
-[IO.File]::Delete($uninstaller)
-[IO.File]::Delete($stub)
 $sums = @($portableName,$setupName) + $(if (Test-Path -LiteralPath $voicePath) { @($voiceName) } else { @() })
 $sums | ForEach-Object { (Get-FileHash -LiteralPath (Join-Path $out $_) -Algorithm SHA256).Hash.ToLowerInvariant() + '  ' + $_ } | Set-Content -LiteralPath (Join-Path $out 'SHA256SUMS.txt') -Encoding ascii
 [pscustomobject]@{
   version = $Version
   buildId = $manifest.buildId
   builtAt = $manifest.builtAt
+  InstallerComponent = 'electron-builder 26.15.3 / NSIS'
+  InstallerTestMode = [bool]$InstallerTestMode
   Portable = $portableName
   Setup = $setupName
   OptionalVoice = if (Test-Path -LiteralPath $voicePath) { $voiceName } else { $null }

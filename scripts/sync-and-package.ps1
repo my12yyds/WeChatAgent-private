@@ -1,5 +1,5 @@
-param(
- [string]$Version='0.5.1',
+﻿param(
+ [string]$Version='0.5.2',
  [string]$Baseline='D:\weixiagen\release\archive\WeChatAgent-0.4.3',
  [string]$ClientRoot='D:\weixiagen\data\workspace\state\hook\wechat-4.1.10.27',
  [string]$OutputDirectory='',
@@ -34,7 +34,7 @@ $resources=Join-Path $stage 'app/resources'
 Copy-Tree $baselineApp (Join-Path $stage 'app') @(
  (Join-Path $baselineApp 'resources/project'),(Join-Path $baselineApp 'resources/app'),
  (Join-Path $baselineApp 'resources/vendor/wechat'),(Join-Path $baselineApp 'resources/vendor/hook-current')
-) @('storage.ini','*.token','Uninstall WeChatAgent.exe','uninstallerIcon.ico')
+) @('storage.ini','*.token','uninstall.exe','Uninstall WeChatGirl.exe','Uninstall WeChatAgent.exe','uninstallerIcon.ico')
 $project=Join-Path $resources 'project'
 New-Item -ItemType Directory -Path $project -Force|Out-Null
 $sourceFiles=@(& git -C $repo -c core.quotepath=false ls-files --cached --others --exclude-standard)
@@ -50,6 +50,9 @@ foreach($relative in $sourceFiles){
  Copy-Item -LiteralPath $source -Destination $destination
 }
 Copy-Tree (Join-Path $repo 'desktop') (Join-Path $resources 'app') @('node_modules') @('*.tmp','*.log')
+# Restore only the reviewed, locked runtime dependency tree; never copy a live node_modules.
+& npm ci --prefix (Join-Path $project 'packages/dsh-social-bridge-plugin') --ignore-scripts --omit=dev --omit=optional --no-audit --no-fund
+if($LASTEXITCODE -ne 0){throw 'Locked bridge runtime dependencies could not be prepared.'}
 # Audited QR renderer dependency; user plugins are not copied.
 Copy-Tree (Join-Path $baselinePath 'app/resources/project/vendor/netease-qr') (Join-Path $project 'vendor/netease-qr')
 $clientDestination=Join-Path $resources 'vendor/wechat'
@@ -79,19 +82,8 @@ $sha=[Security.Cryptography.SHA256]::Create()
 try{$buildId=([BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($seed))).Replace('-','').ToLowerInvariant()).Substring(0,16)}finally{$sha.Dispose()}
 $manifest=[ordered]@{version=$Version;packageVersion=$Version;buildId=$buildId;builtAt=[DateTime]::UtcNow.ToString('o');runtimeRevision='db3bce768f85';wechatVersion='4.1.10.27';dshBundled=$false;files=@($hashes.Keys);sourceHashes=$hashes}
 [IO.File]::WriteAllText((Join-Path $project 'deployment.json'),($manifest|ConvertTo-Json -Depth 6),[Text.UTF8Encoding]::new($false))
-$launcher=@'
-@echo off
-setlocal
-set "ROOT=%~dp0"
-if not exist "%ROOT%app\WeChatGirl.exe" (
- echo Please extract the complete archive before running WeChatGirl.
- pause
- exit /b 1
-)
-start "" "%ROOT%app\WeChatGirl.exe"
-'@
-[IO.File]::WriteAllText((Join-Path $stage 'Start-WeChatGirl.cmd'),$launcher,[Text.Encoding]::ASCII)
-$guide=@("WeChatGirl $Version | Windows x64",'Extract the full archive, then run Start-WeChatGirl.cmd.','Settings are created in the sibling data folder on first launch.','Install DSH separately and follow the setup wizard.','Optional voice environments do not include all required models.','Keep data when upgrading; uninstall preserves user data.') -join [Environment]::NewLine
+& (Join-Path $repo 'scripts/build-launcher.ps1') -OutputPath (Join-Path $stage 'WeChatGirl.exe')
+$guide=@("WeChatGirl $Version | Windows 10/11 x64",'请先完整解压，再双击根目录 WeChatGirl.exe，无须打开命令窗口。','不要在压缩包中运行，也不要只复制一个 EXE。程序文件在 app，首次启动会在同级 data 保存配置。','DSH 需单独安装，请跟随首次配置向导完成连接。','可选语音组件不包含所有模型，请参阅声音工作室说明。','升级前保存设置并从托盘完整退出程序，保留原有 data。安装版使用 Windows 已安装的应用或 app/Uninstall WeChatGirl.exe 卸载；便携版退出后删除程序目录即可，数据需自行保留。') -join [Environment]::NewLine
 [IO.File]::WriteAllText((Join-Path $stage 'README-portable.txt'),$guide,[Text.UTF8Encoding]::new($false))
 & (Join-Path $repo 'scripts/build-release.ps1') -PayloadRoot $stage -OutputDirectory $OutputDirectory -Version $Version
 Write-Host "Ready: $stage"

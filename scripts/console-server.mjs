@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import {createPersonaCategories} from './persona-categories.mjs';
 import {createUpdateChecker} from './update-check.mjs';
 import {builtinCatalog,applyBuiltinUpdate,extensionPresentation} from './extension-status.mjs';
-import {pluginCatalog,updatePlugin,archivePlugin,packageFiles,inspectPackage} from '../packages/plugin-api/catalog.mjs';
+import {pluginCatalog,updatePlugin,archivePlugin,packageFiles,inspectPackage,scanPlugins} from '../packages/plugin-api/catalog.mjs';
 import {PluginInstaller} from '../packages/plugin-api/installer.mjs';
 import {packZip} from '../packages/plugin-api/zip.mjs';
 import {BUNDLED_PLUGINS} from '../packages/plugin-api/bundled.mjs';
@@ -29,6 +29,8 @@ import { readerAccountId, cachedReaderAccount, applyReaderAccount,activeReaderAc
 import {verifyWeChatAccount} from './wechat-account-check.mjs';
 import {createMusicConsole} from './music-console.mjs';
 import {createVoiceConsole} from './voice-console.mjs';
+import {createSpeechPluginConsole} from './speech-plugin-console.mjs';
+import {hostCompatibility} from '../packages/plugin-api/contract.mjs';
 import {ForegroundSender} from './foreground-sender.mjs';
 
 const readJson = file => JSON.parse(fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, ''));
@@ -92,12 +94,13 @@ export function validateConsoleConfig(config, root) {
 }
 
 import {allowedConversation,validateConversationSettings,conversationWorkMode} from '../packages/dsh-social-bridge-plugin/conversation-policy.mjs';
-export function createConsole({ root = projectRoot, port = 3210, runner, readerSetup = runReaderSetup, accountVerifier = verifyWeChatAccount, fetchImpl = fetch, nodeExecutable = process.execPath, filePicker, onQuit, processProbe, processStop, officialLogin } = {}) {
+export function createConsole({ root = projectRoot, port = 3210, runner, readerSetup = runReaderSetup, accountVerifier = verifyWeChatAccount, fetchImpl = fetch, nodeExecutable = process.execPath, filePicker, onQuit, processProbe, processStop, officialLogin, speechCapabilities } = {}) {
   const updates=createUpdateChecker({root,fetchImpl});
   const publicDir = path.join(projectRoot, 'public', 'console');
   const pluginInstaller=new PluginInstaller(root);
   const musicConsole=createMusicConsole(root,{officialLogin});
   const voiceConsole=createVoiceConsole(root);
+  const speechChecks=createSpeechPluginConsole({root,fetchImpl,...(speechCapabilities?{readCapabilities:speechCapabilities}:{})});
   const personaCategories=createPersonaCategories(root);
   const categorySnapshot=()=>{try{return personaCategories.read();}catch(error){return {categories:[],assignments:{},revision:null,error:error.message};}};
   const configFile = path.join(root, 'config', 'wechatagent.json');
@@ -385,6 +388,7 @@ export function createConsole({ root = projectRoot, port = 3210, runner, readerS
       if (req.method === 'GET' && !route.startsWith('/api/')) {
         if(route==='/plugin-api.md'){res.writeHead(200,{'Content-Type':'text/plain; charset=utf-8','Content-Disposition':'attachment; filename="WeChatGirl-plugin-api-v2.md"','X-Content-Type-Options':'nosniff'});res.end(fs.readFileSync(path.join(projectRoot,'docs/PLUGIN_DEVELOPMENT.md')));return;}
         if(route==='/plugin-contract.mjs'){res.writeHead(200,{'Content-Type':'text/javascript; charset=utf-8','X-Content-Type-Options':'nosniff'});res.end(fs.readFileSync(path.join(projectRoot,'public/console/plugin-contract.mjs')));return;}
+        if(route==='/speech-settings.mjs')return reply(200,fs.readFileSync(path.join(publicDir,'speech-settings.mjs'),'utf8'),'text/javascript; charset=utf-8');
         if(route==='/packages/plugin-api/bundled.mjs'){res.writeHead(200,{'Content-Type':'text/javascript; charset=utf-8','X-Content-Type-Options':'nosniff'});res.end(fs.readFileSync(path.join(projectRoot,'packages/plugin-api/bundled.mjs')));return;}
         if(route==='/packages/plugin-api/contract.mjs'){res.writeHead(200,{'Content-Type':'text/javascript; charset=utf-8','X-Content-Type-Options':'nosniff'});res.end(fs.readFileSync(path.join(projectRoot,'packages/plugin-api/contract.mjs')));return;}
         if(route==='/plugin-example.zip'){const example=path.join(projectRoot,'examples/plugins/chat-notes');inspectPackage(example);res.writeHead(200,{'Content-Type':'application/zip','Content-Disposition':'attachment; filename="chat-notes-1.0.0.zip"','X-Content-Type-Options':'nosniff'});res.end(packZip(packageFiles(example)));return;}
@@ -449,6 +453,7 @@ export function createConsole({ root = projectRoot, port = 3210, runner, readerS
         const saved=snapshot();let connected=false,runtime=[],pluginApiReady=false,liveFeatures=[];
         try{const health=await plugin('/health');connected=!!health.ok;pluginApiReady=health.pluginRuntime==='isolated-v2';liveFeatures=health.pluginHostFeatures??[];if(pluginApiReady)runtime=(await plugin('/extensions')).extensions??[];}catch{}
         const catalog=pluginCatalog(root,runtime);
+        for(const item of catalog.plugins)if(item.id==='speech-recognition')item.serviceStatus=speechChecks.status();
         for(const item of catalog.plugins)if(item.enabled&&item.requiresHostFeatures.some(feature=>!liveFeatures.includes(feature))){item.loaded=false;item.active=false;item.reason='请准备配置并完整重开 DSH，加载此插件需要的新版宿主。';item.statusLabel='等待新版宿主';item.statusTone='warning';}
         if(route==='/api/plugins')return reply(200,{...catalog,runtimeConnected:pluginApiReady});
         return reply(200,{...builtinCatalog(saved.config,saved.revision,connected),plugins:catalog.plugins,pluginRevision:catalog.revision,pluginError:catalog.error??null,canInstallZip:true,pluginApiReady});
@@ -548,8 +553,27 @@ export function createConsole({ root = projectRoot, port = 3210, runner, readerS
       if(route==='/api/plugins/inspect')return reply(200,pluginInstaller.inspect(body));
       if(route==='/api/plugins/install')return reply(200,pluginInstaller.install(body));
       if(route==='/api/plugins/cancel')return reply(200,pluginInstaller.cancel(body.ticket));
+      const speechOperation=/^\/api\/plugins\/speech-recognition\/(models|check)$/.exec(route);
+      if(speechOperation){
+        const controller=new AbortController(),closed=()=>{if(!res.writableEnded)controller.abort();};res.once('close',closed);
+        try{return reply(200,await speechChecks.run(speechOperation[1],body,{signal:controller.signal}));}
+        catch(error){if(controller.signal.aborted||res.destroyed)return;throw error;}
+        finally{res.removeListener('close',closed);}
+      }
       const pluginRoute=/^\/api\/plugins\/([a-z][a-z0-9-]{0,39})(\/uninstall)?$/.exec(route);
-      if(pluginRoute){const result=pluginRoute[2]?archivePlugin(root,pluginRoute[1],body.revision):updatePlugin(root,pluginRoute[1],body);return reply(200,{ok:true,revision:result.revision});}
+      if(pluginRoute){
+        if(!pluginRoute[2]&&pluginRoute[1]==='speech-recognition'){
+          await speechChecks.validateForSave(body);
+          if(body.enabled===true){
+            let live=null;try{live=await plugin('/health');}catch{}
+            const item=scanPlugins(root).find(item=>item.id==='speech-recognition'&&!item.invalid);
+            if(item){const compatibility=hostCompatibility(item,live);if(!compatibility.compatible)throw fault(compatibility.reason,409);}
+          }
+        }
+        const result=pluginRoute[2]?archivePlugin(root,pluginRoute[1],body.revision):updatePlugin(root,pluginRoute[1],body);
+        if(!pluginRoute[2]&&pluginRoute[1]==='speech-recognition')speechChecks.onSaved();
+        return reply(200,{ok:true,revision:result.revision});
+      }
       const pluginAction=/^\/api\/plugins\/([a-z][a-z0-9-]{0,39})\/actions\/([a-z][a-z0-9-]{0,19})$/.exec(route);
       if(pluginAction){if(!allowedConversation(snapshot().config.wechat,body.key))throw fault('请选择已允许的聊天。',403);return reply(200,await plugin('/plugin-actions/'+pluginAction[1]+'/'+pluginAction[2],{conversationKey:body.key,args:body.args??{}}));}
       if(route==='/api/fish-notebook/settings'||route==='/api/fish-notebook/write'){
@@ -723,7 +747,7 @@ export function createConsole({ root = projectRoot, port = 3210, runner, readerS
     };
     listen();
   });
-  server.on('close',()=>pluginInstaller.dispose());
+  server.on('close',()=>{pluginInstaller.dispose();speechChecks.close();});
   return { server, shutdown, isBusy: () => shuttingDown || !!activeJob || protectingCredential || processRecoveryBusy, close: () => { server.closeAllConnections(); server.close(); }, start };
 }
 
