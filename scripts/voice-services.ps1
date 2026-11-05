@@ -1,4 +1,4 @@
-param([ValidateSet('start','stop','status','stop-cosy')][string]$Action='start')
+param([ValidateSet('start','start-singing','stop','status','stop-cosy')][string]$Action='start')
 $ErrorActionPreference='Stop'
 $voiceWorkspace=Split-Path -Parent $PSScriptRoot
 $voiceBase=Join-Path $voiceWorkspace 'state/voice'
@@ -37,6 +37,7 @@ $voiceServices=@()
 if(($voiceSettings.voiceEnabled -ne $false) -and (Test-Path -LiteralPath $voiceBreezeBin) -and (Test-Path -LiteralPath $voiceModel)){$voiceServices+=@{name='breeze';exe=$voiceBreezeBin;port=$voicePort;marker=$voiceModel;cwd=(Split-Path -Parent $voiceBreezeBin);args=('"'+$voiceModel+'" --host 127.0.0.1 --port '+$voicePort+' --ws-port -1 --voices-dir "'+(Join-Path $voiceBase 'breeze/voices')+'" --split-chars 180 --parallel 1')}}
 if(($voiceSettings.voiceEnabled -ne $false) -and (Test-Path -LiteralPath (Join-Path $voiceServer 'configs/voice_service.json')) -and (Test-Path -LiteralPath (Join-Path $voiceServer '.venv/Scripts/python.exe'))){$voiceServices+=@{name='singing';exe=(Join-Path $voiceServer '.venv/Scripts/python.exe');port=19882;marker='-m feiyu_voice_service';cwd=$voiceServer;args='-B -m feiyu_voice_service --host 127.0.0.1 --port 19882'}}
 $voiceServices+=@($voiceSettings.models|Where-Object {$_ -and $_.ready -and (Test-Path -LiteralPath $_.exe)})
+if($Action -eq 'start-singing'){$voiceServices=@($voiceServices|Where-Object {$_.name -eq 'singing'})}
 foreach($voiceService in $voiceServices){
  $voiceName=$voiceService.name
  if($voiceRecords.ContainsKey($voiceName) -and (Voice-Owned $voiceRecords[$voiceName])){continue}

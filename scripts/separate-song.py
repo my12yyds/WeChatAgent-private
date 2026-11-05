@@ -1,6 +1,36 @@
 """Separate bounded chunks, keeping one model and streaming the final stems."""
 import argparse,json,pathlib,logging,os,tempfile,wave,sys
 
+def load_separator_model(separator, runtime=None):
+    # audio-separator does not expose ORT SessionOptions. Scope the adapter to
+    # model loading in this isolated, single-request worker; restore it on error.
+    # Retained CPU arenas/patterns can exhaust Windows commit while DSH/TTS run.
+    if runtime is None:
+        import onnxruntime as runtime
+    original = runtime.InferenceSession
+    def bounded_session(model, sess_options=None, *args, **kwargs):
+        options = sess_options if sess_options is not None else runtime.SessionOptions()
+        options.enable_cpu_mem_arena = False
+        options.enable_mem_pattern = False
+        options.intra_op_num_threads = min(4, os.cpu_count() or 1)
+        options.inter_op_num_threads = 1
+        return original(model, options, *args, **kwargs)
+    runtime.InferenceSession = bounded_session
+    try:
+        separator.load_model(model_filename='UVR-MDX-NET-Inst_HQ_3.onnx')
+    finally:
+        runtime.InferenceSession = original
+
+def error_code(error):
+    message = str(error).lower()
+    if isinstance(error, MemoryError) or any(text in message for text in (
+        'out of memory', 'failed to allocate memory', 'bad allocation',
+        'bad_alloc', 'not enough memory', 'cannot allocate memory',
+    )) or isinstance(error, OSError) and (error.errno == 12 or getattr(error, 'winerror', None) == 1455):
+        return 'SONG_SEPARATOR_MEMORY_PRESSURE'
+    known = {'SONG_STEM_MISSING','SONG_STEMS_INVALID','SONG_SEPARATOR_INPUT_INVALID'}
+    return str(error) if str(error) in known else 'SONG_SEPARATOR_FAILED'
+
 def main():
     parser=argparse.ArgumentParser()
     for name in ('input','output','models'):parser.add_argument('--'+name,required=True)
@@ -27,7 +57,7 @@ def main():
                 chunks.append((file,start-left,end-start))
         from audio_separator.separator import Separator
         separator=Separator(log_level=logging.ERROR,output_dir=str(work),output_format='WAV',model_file_dir=args.models)
-        separator.load_model(model_filename='UVR-MDX-NET-Inst_HQ_3.onnx')
+        load_separator_model(separator)
         stems={'vocals':[],'instrumental':[]}
         for index,(file,trim,frames) in enumerate(chunks):
             files=separator.separate(str(file),custom_output_names={'Vocals':'vocals-%04d'%index,'Instrumental':'instrumental-%04d'%index})
@@ -51,8 +81,5 @@ def main():
 
 if __name__=='__main__':
     try:main()
-    except MemoryError:
-        print('WECHATGIRL_MUSIC_ERROR:SONG_SEPARATOR_MEMORY_PRESSURE',file=sys.stderr);sys.exit(1)
     except Exception as error:
-        code=str(error) if str(error) in {'SONG_STEM_MISSING','SONG_STEMS_INVALID','SONG_SEPARATOR_INPUT_INVALID'} else 'SONG_SEPARATOR_FAILED'
-        print('WECHATGIRL_MUSIC_ERROR:'+code,file=sys.stderr);sys.exit(1)
+        print('WECHATGIRL_MUSIC_ERROR:'+error_code(error),file=sys.stderr);sys.exit(1)

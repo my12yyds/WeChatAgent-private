@@ -1,4 +1,4 @@
-"""Keep the dedicated Feiyu CosyVoice model resident; loopback and bearer key only."""
+"""Load the dedicated model on first use; loopback and bearer key only."""
 import argparse,os,sys,json,time,threading,hashlib,io,logging
 logging.disable(logging.CRITICAL)
 from pathlib import Path
@@ -13,7 +13,7 @@ if sys.platform=='win32':
  import torchaudio;use_soundfile_loader(torchaudio)
 from cosyvoice.cli.cosyvoice import AutoModel
 from cosyvoice.utils.common import set_all_random_seed
-manifest=json.loads((package/'manifest.json').read_text(encoding='utf-8-sig'));model_dir=(package/manifest['base_model_dir']).resolve();params=manifest['inference'];torch.set_num_threads(4);began=time.perf_counter();voice=AutoModel(model_dir=str(model_dir),fp16=False,load_trt=False,load_vllm=False);voice.model.llm.eval();states={};references={};active='gentle';lock=threading.Lock()
+manifest=json.loads((package/'manifest.json').read_text(encoding='utf-8-sig'));model_dir=(package/manifest['base_model_dir']).resolve();params=manifest['inference'];torch.set_num_threads(4);voice=None;states={};references={};active=None;lock=threading.Lock()
 def digest(p):
  h=hashlib.sha256()
  with p.open('rb') as f:
@@ -24,10 +24,12 @@ for style in ['cute','gentle']:
  if package not in checkpoint.parents or package not in reference.parents or digest(checkpoint)!=selected['llm_sha256'] or digest(reference)!=selected['reference_sha256']:raise ValueError('COSY_PACKAGE_HASH_INVALID')
  # Keep checkpoint paths, not two additional full CPU copies of the LLM.
  states[style]=checkpoint;references[style]=(reference,selected['reference_text'])
-load_ms=int((time.perf_counter()-began)*1000)
+load_ms=0
 def synthesize(text,style):
- global active
+ global active,voice,load_ms
  with lock,torch.inference_mode():
+  if voice is None:
+   began=time.perf_counter();voice=AutoModel(model_dir=str(model_dir),fp16=False,load_trt=False,load_vllm=False);voice.model.llm.eval();load_ms=int((time.perf_counter()-began)*1000)
   if active!=style:
    try:weights=torch.load(states[style],map_location='cpu',weights_only=True,mmap=True)
    except RuntimeError:weights=torch.load(states[style],map_location='cpu',weights_only=True)
@@ -40,8 +42,8 @@ def synthesize(text,style):
 class Handler(BaseHTTPRequestHandler):
  def log_message(self,*args):pass
  def result(self,code,data,kind='application/json'):
-  body=json.dumps(data).encode() if kind=='application/json' else data;self.send_response(code);self.send_header('Content-Type',kind);self.send_header('Content-Length',str(len(body)));self.send_header('X-Sample-Rate',str(voice.sample_rate));self.end_headers();self.wfile.write(body)
- def do_GET(self):self.result(200,{'ok':True,'engine':'feiyu-cosyvoice3','sampleRate':voice.sample_rate,'styles':['cute','gentle'],'modelLoadMs':load_ms}) if self.path=='/health' else self.result(404,{'error':'not_found'})
+  body=json.dumps(data).encode() if kind=='application/json' else data;self.send_response(code);self.send_header('Content-Type',kind);self.send_header('Content-Length',str(len(body)));self.send_header('X-Sample-Rate',str(voice.sample_rate if voice is not None else 24000));self.end_headers();self.wfile.write(body)
+ def do_GET(self):self.result(200,{'ok':True,'engine':'feiyu-cosyvoice3','sampleRate':voice.sample_rate if voice is not None else 24000,'modelLoaded':voice is not None,'styles':['cute','gentle'],'modelLoadMs':load_ms}) if self.path=='/health' else self.result(404,{'error':'not_found'})
  def do_POST(self):
   import secrets
   if not secrets.compare_digest(self.headers.get('Authorization',''),'Bearer '+token):return self.result(401,{'error':'unauthorized'})
