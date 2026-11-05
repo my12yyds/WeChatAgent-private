@@ -27,7 +27,9 @@ def progress(message):
 
 
 def discover_accounts(selected=''):
-    roots = [pathlib.Path(selected)] if selected else []
+    # WeChat settings may show the storage parent rather than xwechat_files itself.
+    # Probe only these known children; do not recursively scan unrelated folders.
+    roots = [pathlib.Path(selected), pathlib.Path(selected) / 'xwechat_files', pathlib.Path(selected) / 'WeChat Files'] if selected else []
     if not selected:
         home = pathlib.Path.home()
         documents = [home / 'Documents', home]

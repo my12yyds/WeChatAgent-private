@@ -22,7 +22,7 @@ export class PluginProcess{
     if(!message||this.closed)return;
     if(message.type==='ready'&&this.loading){
       try{
-        if(contractFingerprint(message.contract)!==contractFingerprint(hostContract()))throw Error();
+        if(contractFingerprint(message.contract)!==contractFingerprint(hostContract())){this.stop('PLUGIN_HOST_CONTRACT_CHANGED');return;}
         if(!Array.isArray(message.tools)||message.tools.length>16||!Array.isArray(message.hooks))throw Error();
         const ids=new Set();
         for(const tool of message.tools){if(!/^[a-z][a-z0-9-]{0,19}$/.test(tool.id??'')||ids.has(tool.id)||typeof tool.description!=='string'||!tool.description.trim()||tool.description.length>2000)throw Error();ids.add(tool.id);validateSchema(tool.parameters);if(tool.parameters.type!=='object')throw Error();}

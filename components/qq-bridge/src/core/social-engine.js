@@ -343,7 +343,7 @@ export class SocialEngine {
       const maxTextParts=checkedReplyMessageLimit(savedRequest?savedRequest.metadata.replyMaxMessages??2:this.maxTextPartsFor(key));
       const notebookRequest=this.notebookEnabledFor(key)?notebookQuery(rows,this.buffer.recent(key,this.buffer.maxPerChat)):null;
       let metadata = { ...this.connection?.metadata(),replyMaxMessages:maxTextParts,...(notebookRequest?{fishNotebookRequest:notebookRequest}:{}),...(workMode==='assistant'?{assistantSender:this.assistantChatOnly?verifiedAssistantSender(rows[0]):rows[0].sender_wxid,...(this.assistantChatOnly?{assistantChatOnly:true,memeLibraryDisabled:true}:{}),...(!this.assistantChatOnly&&parseAssistantCommand(rows[0].text,this.wakeWords)?.action==='continue'?{assistantParentId:parseAssistantCommand(rows[0].text,this.wakeWords).taskId}:{}),files:this.assistantChatOnly?[]:rows.flatMap(row=>row.files??[]).slice(0,3)}:{}),persona: role, personaName: this.personaNameFor(key),workMode,
-        ...(wakeContext?{wakeContext}:{}),
+        ...(wakeContext?{wakeContext}:{}),groupEngagement:{kind:message.kind,mode:workMode,direct:direct===true||rows.some(row=>row.direct_mention||isDirectMention(row,this.wakeWords)),verified:true},
         historyExcludeIds:rows.map(row=>row.id),
         conversationName: message.conversation_name ?? rows.at(-1)?.conversation_name ?? '',
         pluginSender:verifiedBatchSender(rows),

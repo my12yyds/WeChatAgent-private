@@ -1,7 +1,8 @@
 ﻿param(
   [Parameter(Mandatory=$true)][string]$PayloadRoot,
   [Parameter(Mandatory=$true)][string]$OutputDirectory,
-  [string]$Version = '0.5.4',
+  [string]$Version = '0.5.5',
+  [string]$VoiceComponentsZip = '',
   [switch]$Resume,
   [switch]$InstallerTestMode
 )
@@ -36,8 +37,15 @@ $voiceName = 'WeChatGirl-voice-components.zip'
 $portablePath = Join-Path $out $portableName
 $setupPath = Join-Path $out $setupName
 $voicePath = Join-Path $out $voiceName
+if($VoiceComponentsZip){
+ $VoiceComponentsZip=(Resolve-Path -LiteralPath $VoiceComponentsZip).Path
+ if($VoiceComponentsZip -eq $voicePath){throw 'VoiceComponentsZip must be outside the output directory.'}
+ & node (Join-Path $repo 'scripts/verify-voice-components.mjs') $VoiceComponentsZip
+ if($LASTEXITCODE -ne 0){throw 'Use the registered voice component archive; do not repack an unregistered environment.'}
+}
 if (!$Resume) { foreach ($file in @($portablePath,$setupPath,$voicePath)) { if (Test-Path -LiteralPath $file) { throw "Release output already exists: $file" } } }
 if ($Resume) { foreach ($file in @($portablePath,$setupPath,$voicePath,(Join-Path $out 'SHA256SUMS.txt'),(Join-Path $out 'VERIFICATION.json'))) { if (Test-Path -LiteralPath $file) { [IO.File]::Delete($file) } } }
+if($VoiceComponentsZip){Copy-Item -LiteralPath $VoiceComponentsZip -Destination $voicePath}
 
 & (Join-Path $repo 'scripts/build-launcher.ps1') -OutputPath (Join-Path $payload 'WeChatGirl.exe')
 Add-Type -AssemblyName System.IO.Compression
@@ -70,24 +78,7 @@ if (!(Test-Path -LiteralPath $portablePath)) {
   } finally { $portable.Dispose() }
 }
 
-$voiceRoots = @('data/voice-python','data/voice-wsl') | ForEach-Object { Join-Path $payload $_.Replace('/','\') } | Where-Object { Test-Path -LiteralPath $_ }
-if ($voiceRoots.Count -and !(Test-Path -LiteralPath $voicePath)) {
-  $voice = [IO.Compression.ZipFile]::Open($voicePath, [IO.Compression.ZipArchiveMode]::Create)
-  try {
-    foreach ($root in $voiceRoots) {
-      Get-ChildItem -LiteralPath $root -File -Recurse | ForEach-Object {
-        if ($_.Name -in @('.lock','.gitignore') -or $_.FullName -match '[\\/](?:\.git|\.temp|__pycache__|Cache)(?:[\\/]|$)' -or $_.Extension -eq '.pyc') { return }
-        $entry = $_.FullName.Substring($payload.Length + 1).Replace('\','/')
-        [IO.Compression.ZipFileExtensions]::CreateEntryFromFile($voice, $_.FullName, $entry, [IO.Compression.CompressionLevel]::Optimal) | Out-Null
-      }
-    }
-    $readme = "WeChatGirl optional voice environments`r`n`r`nExtract beside app and data. These environments do not include every required model or reference audio. See docs/VOICE_STUDIO.md before enabling synthesis. No user state is included.`r`n"
-    $entry = $voice.CreateEntry('VOICE-OPTIONAL-README.txt')
-    $writer = [IO.StreamWriter]::new($entry.Open(), [Text.UTF8Encoding]::new($false))
-    try { $writer.Write($readme) } finally { $writer.Dispose() }
-  } finally { $voice.Dispose() }
-}
-
+# Component packages must be pre-reviewed and match the importer's registered hash.
 $fileList = Join-Path $out 'installer-file-list.json'
 try {
   @($files | ForEach-Object { $_.FullName.Substring($payload.Length + 1).Replace('\','/') }) | ConvertTo-Json | Set-Content -LiteralPath $fileList -Encoding utf8

@@ -1,4 +1,4 @@
-param([ValidateSet('start','stop','status')][string]$Action='start')
+param([ValidateSet('start','stop','status','stop-cosy')][string]$Action='start')
 $ErrorActionPreference='Stop'
 $voiceWorkspace=Split-Path -Parent $PSScriptRoot
 $voiceBase=Join-Path $voiceWorkspace 'state/voice'
@@ -14,23 +14,29 @@ function Voice-Owned($Item){
  if(-not $voiceProcess.ExecutablePath -or -not $voiceProcess.CommandLine -or [IO.Path]::GetFullPath($voiceProcess.ExecutablePath) -ne [IO.Path]::GetFullPath($Item.exe) -or $voiceProcess.CommandLine.IndexOf([string]$Item.marker,[StringComparison]::OrdinalIgnoreCase) -lt 0){throw 'VOICE_PROCESS_IDENTITY_CHANGED'}
  return $voiceProcess
 }
-if($Action -eq 'stop'){
- foreach($voiceName in @('breeze','singing')){if($voiceRecords.ContainsKey($voiceName)){if(Voice-Owned $voiceRecords[$voiceName]){if($voiceName -eq 'singing'){& taskkill.exe /PID ([int]$voiceRecords[$voiceName].pid) /T /F | Out-Null;if($LASTEXITCODE -ne 0){throw 'VOICE_SERVICE_STOP_FAILED'}}else{Stop-Process -Id ([int]$voiceRecords[$voiceName].pid) -ErrorAction Stop}};$voiceRecords.Remove($voiceName)}}
+if($Action -in @('stop','stop-cosy')){
+ $voiceStopNames=if($Action -eq 'stop-cosy'){@('cosyvoice')}else{@('breeze','singing','embeddings','cosyvoice')}
+ foreach($voiceName in $voiceStopNames){if($voiceRecords.ContainsKey($voiceName)){if(Voice-Owned $voiceRecords[$voiceName]){if($voiceName -in @('singing','cosyvoice','embeddings')){& taskkill.exe /PID ([int]$voiceRecords[$voiceName].pid) /T /F | Out-Null;if($LASTEXITCODE -ne 0){throw 'VOICE_SERVICE_STOP_FAILED'}}else{Stop-Process -Id ([int]$voiceRecords[$voiceName].pid) -ErrorAction Stop}};$voiceRecords.Remove($voiceName)}}
  if(Test-Path -LiteralPath $voiceBase){$voiceRecords|ConvertTo-Json -Depth 4|Set-Content -LiteralPath $voiceRecord -Encoding UTF8};exit 0
 }
 if($Action -eq 'status'){foreach($voiceName in $voiceRecords.Keys){Write-Output ($voiceName+': '+[bool](Voice-Owned $voiceRecords[$voiceName]))};exit 0}
 $voiceConfigFile=Join-Path $voiceWorkspace 'config/plugins.json'
 if(-not(Test-Path -LiteralPath $voiceConfigFile)){exit 0}
-$voicePlugin=(Get-Content -LiteralPath $voiceConfigFile -Raw -Encoding UTF8|ConvertFrom-Json).plugins.'voice-studio'
-if(-not $voicePlugin.enabled -or 'voice' -notin $voicePlugin.permissions){exit 0}
-$voicePort=if($voicePlugin.settings.breezePort){[int]$voicePlugin.settings.breezePort}else{19881}
+$voiceNode=(Get-Command node -ErrorAction Stop).Source
+$voiceSettingsText=& $voiceNode (Join-Path $PSScriptRoot 'voice-service-settings.mjs') $voiceWorkspace 2>$null
+if($LASTEXITCODE -ne 0){throw 'VOICE_SERVICE_SETTINGS_UNAVAILABLE'}
+$voiceSettings=$voiceSettingsText|ConvertFrom-Json
+if(-not $voiceSettings.enabled){exit 0}
+$voicePort=[int]$voiceSettings.port
 if($voicePort -lt 1024 -or $voicePort -gt 65534){throw 'VOICE_PORT_INVALID'}
 $voiceBreezeBin=Join-Path $voiceBase 'breeze/runtime/breeze-tts-2-v0.1.6-windows-x64-vulkan/breeze-server.exe'
 $voiceModel=Join-Path $voiceBase 'breeze/models/breeze-tts-2-q8_0.gguf'
+if($voiceSettings.modelPath){$voiceModel=[string]$voiceSettings.modelPath}
 $voiceServer=Join-Path $voiceBase 'feiyu-service/server'
 $voiceServices=@()
-if((Test-Path -LiteralPath $voiceBreezeBin) -and (Test-Path -LiteralPath $voiceModel)){$voiceServices+=@{name='breeze';exe=$voiceBreezeBin;port=$voicePort;marker=$voiceModel;cwd=(Split-Path -Parent $voiceBreezeBin);args=('"'+$voiceModel+'" --host 127.0.0.1 --port '+$voicePort+' --ws-port -1 --voices-dir "'+(Join-Path $voiceBase 'breeze/voices')+'" --split-chars 180 --parallel 1')}}
-if((Test-Path -LiteralPath (Join-Path $voiceServer 'configs/voice_service.json')) -and (Test-Path -LiteralPath (Join-Path $voiceServer '.venv/Scripts/python.exe'))){$voiceServices+=@{name='singing';exe=(Join-Path $voiceServer '.venv/Scripts/python.exe');port=19882;marker='-m feiyu_voice_service';cwd=$voiceServer;args='-B -m feiyu_voice_service --host 127.0.0.1 --port 19882'}}
+if(($voiceSettings.voiceEnabled -ne $false) -and (Test-Path -LiteralPath $voiceBreezeBin) -and (Test-Path -LiteralPath $voiceModel)){$voiceServices+=@{name='breeze';exe=$voiceBreezeBin;port=$voicePort;marker=$voiceModel;cwd=(Split-Path -Parent $voiceBreezeBin);args=('"'+$voiceModel+'" --host 127.0.0.1 --port '+$voicePort+' --ws-port -1 --voices-dir "'+(Join-Path $voiceBase 'breeze/voices')+'" --split-chars 180 --parallel 1')}}
+if(($voiceSettings.voiceEnabled -ne $false) -and (Test-Path -LiteralPath (Join-Path $voiceServer 'configs/voice_service.json')) -and (Test-Path -LiteralPath (Join-Path $voiceServer '.venv/Scripts/python.exe'))){$voiceServices+=@{name='singing';exe=(Join-Path $voiceServer '.venv/Scripts/python.exe');port=19882;marker='-m feiyu_voice_service';cwd=$voiceServer;args='-B -m feiyu_voice_service --host 127.0.0.1 --port 19882'}}
+$voiceServices+=@($voiceSettings.models|Where-Object {$_ -and $_.ready -and (Test-Path -LiteralPath $_.exe)})
 foreach($voiceService in $voiceServices){
  $voiceName=$voiceService.name
  if($voiceRecords.ContainsKey($voiceName) -and (Voice-Owned $voiceRecords[$voiceName])){continue}

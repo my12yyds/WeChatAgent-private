@@ -6,7 +6,7 @@ import {configuration,scanPlugins,validateValue,atomicJson} from '../packages/pl
 import {readVoiceAttempt} from '../packages/plugin-api/voice-status.mjs';
 import {discoverModels,inspectConfiguration,probeTranscription,errorMessage} from '../optional-extensions/speech-recognition/lib/diagnostics.mjs';
 
-const bundled=JSON.parse(fs.readFileSync(new URL('../optional-extensions/speech-recognition/plugin.json',import.meta.url),'utf8'));
+const bundled=JSON.parse(fs.readFileSync(new URL('../packages/plugin-distribution/catalog.json',import.meta.url),'utf8')).schemas['speech-recognition'];
 const digest=value=>crypto.createHash('sha256').update(JSON.stringify(Object.fromEntries(Object.entries(value).sort(([a],[b])=>a.localeCompare(b))))).digest('hex');
 const fault=(message,status=400)=>Object.assign(new Error(message),{status});
 

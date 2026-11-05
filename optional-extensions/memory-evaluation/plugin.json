@@ -1,0 +1,26 @@
+{
+  "id": "memory-evaluation",
+  "name": "虚构长对话评测",
+  "version": "1.0.1",
+  "apiVersion": 2,
+  "host": "wechatagent",
+  "author": "my12yyds",
+  "description": "用固定虚构人物和100/500条消息检测旧事召回、昵称纠正、同名分离、跨群隐私与拒绝共享。分别评估资料召回和模型回答，不读真实聊天，不发微信；会调用当前选择的模型并消耗额度。测试通过只代表这些固定案例，不保证所有聊天永远记得。",
+  "permissions": [
+    "model_generate"
+  ],
+  "requiresHostFeatures": [
+    "model-utility-v1"
+  ],
+  "requiresAccount": true,
+  "settings": {
+    "allowEvaluation": false
+  },
+  "configSchema": {
+    "allowEvaluation": {
+      "type": "boolean",
+      "title": "允许模型评测（产生模型额度消耗）",
+      "description": "默认关闭。开启只是允许运行固定虚构评测，不会自动开始；执行时仍需明确确认。评测会使用所选聊天模型的额度，结果不写入真实人物记忆。"
+    }
+  }
+}

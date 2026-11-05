@@ -10,7 +10,7 @@ function safeName(raw){
   if(parts.length>9||parts.some(part=>!part||part==='.'||part==='..'||/[. ]$/.test(part)||/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(part)||['node_modules','.git'].includes(part.toLowerCase())))throw fail('ZIP 包含路径穿越、保留名称或不支持的目录。');
   return name;
 }
-export function unpackZip(data){
+export function unpackZip(data,{allowContainer=false}={}){
   if(!Buffer.isBuffer(data)||data.length<22||data.length>LIMITS.zipBytes)throw fail('ZIP 文件为空或超过 8 MiB。');
   let end=-1;for(let i=data.length-22;i>=Math.max(0,data.length-65557);i--)if(data.readUInt32LE(i)===0x06054b50&&i+22+data.readUInt16LE(i+20)===data.length){end=i;break;}
   if(end<0)throw fail('ZIP 目录损坏，不支持分卷或 ZIP64。');
@@ -36,7 +36,7 @@ export function unpackZip(data){
   if(cursor!==end||!files.length)throw fail('ZIP 内容不完整。');
   // Accept either the package itself or one enclosing folder, never a bundle
   // of several plugins. Metadata is not executed during installation.
-  if(!files.some(item=>item.name==='plugin.json')){
+  if(!allowContainer&&!files.some(item=>item.name==='plugin.json')){
     const prefix=files[0].name.split('/')[0]+'/';
     if(files.some(item=>!item.name.startsWith(prefix)))throw fail('请只压缩一个插件目录。');
     for(const item of files)item.name=item.name.slice(prefix.length);

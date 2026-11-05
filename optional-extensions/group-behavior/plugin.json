@@ -1,0 +1,50 @@
+{
+  "id": "group-behavior",
+  "name": "自然群聊节奏",
+  "version": "1.0.1",
+  "apiVersion": 2,
+  "host": "wechatagent",
+  "author": "my12yyds",
+  "description": "把“现在要不要接话”和“怎么说”分开控制，减少群里抢话、重复套话与无意义追问。只作用于已授权群聊的社交模式；直接点名或唤醒的请求不受闲聊概率和冷却抑制。可先运行虚构场景回放，不调用模型，也不发送微信。",
+  "permissions": [
+    "reply_policy"
+  ],
+  "requiresHostFeatures": [
+    "group-reply-policy-v1"
+  ],
+  "requiresAccount": true,
+  "settings": {
+    "cooldownSeconds": 30,
+    "ambientChance": 35,
+    "repeatGuard": true,
+    "maxQuestions": 1
+  },
+  "configSchema": {
+    "cooldownSeconds": {
+      "type": "integer",
+      "title": "非直接点名的接话冷却（秒）",
+      "minimum": 0,
+      "maximum": 3600,
+      "description": "上一次实际回复后，普通环境闲聊至少等待多少秒再考虑接话。默认30秒，0关闭冷却；直接点名不受此限制，私聊和任务模式不受影响。"
+    },
+    "ambientChance": {
+      "type": "integer",
+      "title": "非直接点名的接话概率（%）",
+      "minimum": 0,
+      "maximum": 100,
+      "description": "通过冷却检查的普通群聊发言，按此百分比决定是否接话。35表示约35%，不保证每三条回一条；0不主动接环境闲聊，100每次都考虑接话，点名始终放行。"
+    },
+    "repeatGuard": {
+      "type": "boolean",
+      "title": "抑制重复表达",
+      "description": "开启后抑制近期完全相同的环境闲聊回复，避免反复说同一句；保留最近5条进行对比。直接点名追问不因此丢失回复，重启后本轮缓存清空。"
+    },
+    "maxQuestions": {
+      "type": "integer",
+      "title": "表达提示：最多自然追问数",
+      "minimum": 0,
+      "maximum": 2,
+      "description": "给模型的表达提示：每条回复最多自然追问几次，默认1，0提示不主动追问。它是表达约束，不保证模型百分之百遵守，也不禁止回答用户的问题。"
+    }
+  }
+}

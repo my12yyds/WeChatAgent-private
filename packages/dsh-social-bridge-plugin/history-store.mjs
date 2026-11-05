@@ -69,11 +69,13 @@ export class HistoryStore{
     // objects never enter the archive. Text itself is not buffer-truncated.
     const body=Object.fromEntries(['id','platform','kind','conversation_id','conversation_name','sender_id','sender_name','sender_key','self_id','message_id','timestamp','outgoing','delivery_id','delivery_status','proactive','interaction','sticker_id','forwardedRecord','quoteReply'].filter(k=>row[k]!==undefined).map(k=>[k,row[k]]));
     body.text=String(fullText??'');body.images=(row.images??[]).filter(x=>/^[a-f0-9]{64}$/.test(x?.id??'')).map(x=>({id:x.id}));
+    if(!row.outgoing&&/^[A-Za-z0-9_-]{1,128}$/.test(row.sender_wxid??''))body.sender_person=hash(row.sender_wxid);
     const at=Number(row.timestamp)||Date.now()/1000;
     return this.transaction(()=>{
       const previous=this.db.prepare('SELECT seq,body,text FROM records WHERE chat=? AND id=?').get(key,id);
       // A restart backfill must never replace a full text with its 4000-char buffer copy.
       if(previous){const old=JSON.parse(previous.body);if(old.text.length>body.text.length&&old.text.startsWith(body.text))body.text=old.text;
+        if(old.sender_person&&!body.sender_person)body.sender_person=old.sender_person;
         if(old.delivery_status==='confirmed'&&body.delivery_status!=='confirmed')return previous.seq;
         if(old.delivery_status==='confirmed')body.delivery_status='confirmed';
         if(JSON.stringify(body)!==previous.body){
@@ -104,6 +106,7 @@ export class HistoryStore{
     }
     return events.length;
   }
+  archivePage(key,{after=0,limit=40}={}){if(!validKey(key)||!Number.isSafeInteger(after)||after<0||!Number.isSafeInteger(limit)||limit<1||limit>40)throw Error('HISTORY_ARCHIVE_PAGE_INVALID');return this.db.prepare("SELECT seq,at,body,text FROM records WHERE chat=? AND seq>? AND source!='legacy-context' ORDER BY seq LIMIT ?").all(key,after,limit).map(r=>{const b=JSON.parse(r.body);return {id:r.seq,at:r.at,speaker:b.outgoing?'AI':b.sender_name||'',personId:b.outgoing?null:b.sender_key||b.sender_person||null,text:b.quoteReply||b.forwardedRecord?'':r.text.slice(0,12000)};});}
   rows(key){return this.db.prepare('SELECT seq,at,body,source FROM records WHERE chat=? ORDER BY at,seq').all(key).map(r=>({...JSON.parse(r.body),archiveSeq:r.seq,archiveSource:r.source}));}
   windowRows(key,policy,excludeIds=[]){
     const excluded=new Set(excludeIds);let before=Number.MAX_SAFE_INTEGER;
@@ -122,7 +125,7 @@ export class HistoryStore{
     const record=this.db.prepare('SELECT seq,at,body,text,source FROM records WHERE chat=? AND seq=?').get(key,id);if(!record)return [];
     const prior=context?this.db.prepare('SELECT seq,at,body,text,source FROM records WHERE chat=? AND (at<? OR at=? AND seq<?) ORDER BY at DESC,seq DESC LIMIT ?').all(key,record.at,record.at,id,context).reverse():[];
     const next=context?this.db.prepare('SELECT seq,at,body,text,source FROM records WHERE chat=? AND (at>? OR at=? AND seq>?) ORDER BY at,seq LIMIT ?').all(key,record.at,record.at,id,context):[];
-    return [...prior,record,...next].map(r=>{const body=JSON.parse(r.body),start=r.seq===id?offset:0,limit=r.seq===id?1600:300;return {id:r.seq,at:r.at,speaker:body.outgoing?'AI':body.sender_name||body.sender_id,text:r.text.slice(start,start+limit),offset:start,nextOffset:start+limit<r.text.length?start+limit:null,source:r.source,delivery_status:body.delivery_status};});
+    return [...prior,record,...next].map(r=>{const body=JSON.parse(r.body),start=r.seq===id?offset:0,limit=r.seq===id?1600:300;return {id:r.seq,at:r.at,speaker:body.outgoing?'AI':body.sender_name||body.sender_id,personId:body.outgoing?null:body.sender_key||body.sender_person||'chat:'+body.sender_id,text:r.text.slice(start,start+limit),offset:start,nextOffset:start+limit<r.text.length?start+limit:null,source:r.source,delivery_status:body.delivery_status};});
   }
   recent(key,policy,excludeIds=[]){
     const excluded=new Set(excludeIds),selected=this.db.prepare("SELECT seq,body,source FROM records WHERE chat=? AND source!='legacy-context' ORDER BY at DESC,seq DESC LIMIT ?").all(key,policy.recentMessages+excludeIds.length).filter(r=>!excluded.has(JSON.parse(r.body).id)).slice(0,policy.recentMessages);
@@ -132,11 +135,15 @@ export class HistoryStore{
     return rows;
   }
   checkpoint(key){return this.db.prepare('SELECT * FROM checkpoints WHERE chat=? ORDER BY id DESC LIMIT 1').get(key)??null;}
+  continuityEvidence(key,{beforeId=Number.MAX_SAFE_INTEGER}={}){
+    if(!validKey(key)||!Number.isSafeInteger(beforeId)||beforeId<1)return [];
+    return this.db.prepare("SELECT seq,body FROM records WHERE chat=? AND seq<? AND source!='legacy-context' ORDER BY at DESC,seq DESC LIMIT 200").all(key,beforeId).reverse().map(row=>({...JSON.parse(row.body),archiveSeq:row.seq}));
+  }
   summaryBatch(key,policy){
     const recent=this.recent(key,policy),cutoff=recent[0]?.timestamp??Infinity,ids=new Set(recent.map(r=>r.archiveSeq));
     const candidates=this.db.prepare('SELECT r.seq,r.body,r.text,r.source,p.through FROM records r LEFT JOIN summarized s ON s.record=r.seq LEFT JOIN summary_progress p ON p.record=r.seq WHERE r.chat=? AND s.record IS NULL AND r.at<=? ORDER BY r.at,r.seq LIMIT 200').all(key,cutoff);
     const rows=[];let size=0;
-    for(const record of candidates){if(ids.has(record.seq))continue;const b=JSON.parse(record.body),offset=record.through??0,row={id:record.seq,at:b.timestamp,speaker:b.outgoing?'AI（'+(b.delivery_status??'未核实发送')+'）':b.sender_name||b.sender_id,text:record.text.slice(offset),source:record.source,offset,endOffset:record.text.length,totalChars:record.text.length};let text=JSON.stringify(row);
+      for(const record of candidates){if(ids.has(record.seq))continue;const b=JSON.parse(record.body),offset=record.through??0,row={id:record.seq,at:b.timestamp,speaker:b.outgoing?'AI（'+(b.delivery_status??'未核实发送')+'）':b.sender_name||b.sender_id,personId:b.outgoing?null:b.sender_key||b.sender_person||'chat:'+b.sender_id,text:record.text.slice(offset),source:record.source,offset,endOffset:record.text.length,totalChars:record.text.length};let text=JSON.stringify(row);
       if(size+text.length>policy.summaryInputChars){if(rows.length)break;
         let low=0,high=row.text.length;const full=row.text;row.truncated=true;
         while(low<high){const middle=Math.ceil((low+high)/2);row.text=full.slice(0,middle);row.endOffset=offset+middle;if(JSON.stringify(row).length<=policy.summaryInputChars-2)low=middle;else high=middle-1;}
@@ -144,7 +151,7 @@ export class HistoryStore{
       }
       rows.push(row);size+=text.length;if(size>=policy.summaryInputChars-1000)break;
     }
-    const previous=this.checkpoint(key),signature=hash(JSON.stringify([previous?.id??0,rows]));return {rows,previous,signature};
+    const previous=this.checkpoint(key),signature=hash(JSON.stringify([previous?.id??0,rows])),lastAttemptAt=this.db.prepare('SELECT max(retry_at)-300000 at FROM summary_attempts WHERE chat=?').get(key).at??0;return {rows,previous,signature,lastAttemptAt};
   }
   reserveSummary(key,signature,now=Date.now()){
     return this.transaction(()=>{const previous=this.db.prepare('SELECT * FROM summary_attempts WHERE chat=? AND hash=?').get(key,signature);if(previous&&(previous.attempts>=3||previous.retry_at>now))return false;
@@ -165,7 +172,7 @@ export class HistoryStore{
     const matches=this.db.prepare('SELECT r.seq,r.at,r.body,r.text,r.source,bm25(search) rank FROM search JOIN records r ON r.seq=search.rowid WHERE search MATCH ? AND r.chat=? AND r.at>=? AND r.at<=? ORDER BY rank,r.at DESC LIMIT 4').all(tokens.join(' OR '),key,after??0,before??Number.MAX_SAFE_INTEGER);
     return matches.map(r=>{const b=JSON.parse(r.body),normalized=r.text.normalize('NFKC').toLowerCase(),words=query.normalize('NFKC').toLowerCase().match(/[a-z0-9_]{2,}|[\p{Script=Han}]+/gu)??[];
       const needles=[query.toLowerCase(),...words,...words.flatMap(w=>Array.from(w).slice(0,-1).map((c,i)=>c+Array.from(w)[i+1]))],hit=needles.map(w=>normalized.indexOf(w)).find(i=>i>=0)??0,start=Math.max(0,hit-100);
-      return {id:r.seq,at:r.at,speaker:b.outgoing?'AI':b.sender_name||b.sender_id,text:r.text.slice(start,start+480),offset:start,delivery_status:b.delivery_status,source:r.source,truncated:r.text.length>480};});
+        return {id:r.seq,at:r.at,speaker:b.outgoing?'AI':b.sender_name||b.sender_id,personId:b.outgoing?null:b.sender_key||b.sender_person||'chat:'+b.sender_id,text:r.text.slice(start,start+480),offset:start,delivery_status:b.delivery_status,source:r.source,truncated:r.text.length>480};});
   }
   putUsage(row){
     const usage=row.usage??{},buckets=['inputTokens','cacheReadTokens','cacheWriteTokens','outputTokens'].map(k=>usage[k]??(k==='cacheReadTokens'||k==='cacheWriteTokens'?0:null));

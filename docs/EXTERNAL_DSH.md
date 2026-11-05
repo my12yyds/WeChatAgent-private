@@ -24,3 +24,11 @@ DSH 的账号、会话、附件和缓存由独立安装的 DSH 管理，通常�
 需要提供桌面 CLI 的 DSH 版本；不支持的旧版本提示升级或手动复制路径。未初始化时提示先打开一次，运行中提示从托盘退出，版本冲突不会自动豁免。超时后先在 DSH 插件页面核对是否已安装，再决定是否重试。旧版原内置 DSH 的自定义数据目录沿用已有启动配置。
 
 官方 CLI 行为参考：[DSH Desktop 插件管理](https://github.com/deepseek-ai/deepseek-harness/blob/master/apps/desktop/README.md#bundled-command-runtime)及[插件管理器](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/boot/plugin-manager/README.md)。
+
+## 桌面启动报 Web authentication failed
+
+部分DSH桌面版本在反复重启后累积本地dsh-auth认证Cookie，可能超过本地HTTP服务的请求头限制。这与模型API密钥错误不同，不应清空模型、插件或会话配置。
+
+从系统托盘完整退出DSH，再通过WeChatGirl打开DSH。新的启动入口会先检查本地临时认证缓存，私有备份后只清理127.0.0.1的dsh-auth条目；如果DSH仍在运行则跳过，备份失败则保留原数据并停止操作。备份在当前数据目录state/dsh-auth-backups内，不应上传仓库或公开分享。
+
+上游复现与恢复记录：[认证Cookie累积导致HTTP431](https://github.com/deepseek-ai/deepseek-harness/discussions/11239)。后续官方修复仍应优先使用官方版本；这里不修改DSH程序文件或关闭认证。

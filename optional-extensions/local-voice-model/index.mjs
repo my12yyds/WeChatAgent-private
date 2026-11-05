@@ -1,0 +1,1 @@
+export function setup(api){api.registerTool({id:'status',description:'查看是否在本地模型插件选择了自定义模型，不返回本机路径。',parameters:{type:'object',properties:{},additionalProperties:false},execute:async ctx=>({content:JSON.stringify({customModel:!!ctx.config().localModelPath,restartRequiredAfterChange:true})})});}

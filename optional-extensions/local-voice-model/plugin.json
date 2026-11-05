@@ -1,0 +1,24 @@
+{
+  "id": "local-voice-model",
+  "name": "本地声音模型",
+  "version": "1.0.0",
+  "apiVersion": 2,
+  "host": "wechatagent",
+  "author": "my12yyds",
+  "description": "选择现有本机 Breeze TTS 2 兼容 GGUF 模型。只影响本机合成服务启动，保存后重启语音服务。",
+  "permissions": [],
+  "requiresHostFeatures": [
+    "local-voice-model-v1"
+  ],
+  "settings": {
+    "localModelPath": ""
+  },
+  "configSchema": {
+    "localModelPath": {
+      "type": "string",
+      "title": "本地 Breeze 模型文件",
+      "maxLength": 500,
+      "description": "绝对路径，留空使用内置模型。仅支持 Breeze TTS 2 兼容 GGUF；保存并重启语音服务后生效。"
+    }
+  }
+}

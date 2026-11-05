@@ -30,7 +30,7 @@
       "groups": [],
       "private": []
     },
-    "wake_mode": "hybrid",
+    "wake_mode": "mention",
     "textTransport": {
       "mode": "native"
     },
@@ -38,19 +38,20 @@
       "小助手"
     ],
     "media": {
-      "allowStickerCdn": false,
-      "allowStickerCdnAlias": false
+      "allowStickerCdn": true,
+      "allowStickerCdnAlias": true
     },
     "stickers": {
       "enabled": true,
       "labelCache": true,
       "chats": {},
-      "collectEnabled": true,
+      "collectEnabled": false,
+      "collectDshEnabled": true,
       "shareEnabled": true,
       "candidateLimit": 8
     },
     "search": {
-      "enabled": false,
+      "enabled": true,
       "cache": true,
       "maxResults": 3,
       "maxSnippetChars": 1200,
@@ -60,10 +61,10 @@
       "chats": {}
     },
     "proactive": {
-      "enabled": false,
+      "enabled": true,
       "mode": "mixed",
-      "intervalMinutes": 240,
-      "idleMinutes": 120,
+      "intervalMinutes": 60,
+      "idleMinutes": 30,
       "startTime": "09:00",
       "endTime": "22:00",
       "jitterMinutes": 15,
@@ -71,9 +72,9 @@
       "chats": {}
     },
     "context": {
-      "enabled": false,
+      "enabled": true,
       "maxTokens": 100000,
-      "idleSeconds": 60,
+      "idleSeconds": 120,
       "chats": {}
     },
     "webReader": {
@@ -89,9 +90,9 @@
     },
     "history": {
       "enabled": true,
-      "recentMessages": 8,
-      "recentChars": 4000,
-      "coldWakeMinutes": 30,
+      "recentMessages": 40,
+      "recentChars": 12000,
+      "coldWakeMinutes": 0,
       "summaryChars": 3200,
       "summaryInputChars": 24000,
       "maxSessionTurns": 32,

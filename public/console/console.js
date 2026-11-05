@@ -20,7 +20,7 @@ import { createExtensionUI } from './extensions.js';
 import {createStickerManagerUI} from './sticker-manager.js';
 import {mergeConversationSave} from './conversation-settings.mjs';
 import {openProcessRecovery,needsWeChatRepair,needsDshSetup} from './process-recovery.js';
-import {mountMusicPage} from './music.js';
+import {mountMusicPage,mountVoiceStudioPage} from './music.js';
 import {sendModeCard} from './send-mode-ui.mjs';
 import {mountFeatureSetup} from './feature-setup.mjs';
 const $ = selector => document.querySelector(selector);
@@ -56,7 +56,8 @@ const pages = {
   extensions: ['能力', '查看内置能力与 DSH 来源，在聊天中独立分配权限。'],
   plugins: ['插件与聊天', '选择每个插件在哪些允许的聊天中运行；参数和权限仍在能力页配置。'],
   stickers: ['表情包', '查看、添加与整理当前账号的共享表情包。'],
-  memory: ['记忆', '查看当前账号的群友观察与会话压缩摘要。'],
+  memory: ['记忆', '管理人物事实、查看记忆来源，核对运行状态与长对话表现。'],
+  voice: ['语音音色', '选择本地模型、管理自定义音色与语音回复。'],
   music: ['音乐', '登录网易云、搜索歌曲并查看本机已加载的曲库。'],
   sending: ['发送模式', '选择微信发送方式，并查看两种模式下可用的功能。'],
 };
@@ -81,7 +82,7 @@ const actions = {
 const searchDefaults={enabled:false,cache:true,maxResults:3,maxSnippetChars:1200,maxSearchesPerTurn:1,timeoutMs:20000,cacheTtlSeconds:900};
 const proactiveDefaults={enabled:false,mode:'mixed',intervalMinutes:240,idleMinutes:120,startTime:'09:00',endTime:'22:00',useSearch:true,jitterMinutes:15};
 const contextDefaults={enabled:false,maxTokens:100000,idleSeconds:60};
-const getPath = (object, path) => {const value=path.split('.').reduce((value,key)=>value?.[key],object);if(value!==undefined)return value;if(path==='wechat.stickers.collectEnabled')return object.wechat?.stickers?.collectGroups??true;if(path==='wechat.stickers.shareEnabled')return object.wechat?.stickers?.shareGroups??true;if(['wechat.stickers.enabled','wechat.stickers.labelCache','wechat.stickers.collectGroups','wechat.stickers.shareGroups'].includes(path))return true;if(path==='wechat.replyLayout.maxMessages')return 2;if(path==='wechat.stickers.candidateLimit')return 8;if(path==='wechat.webReader.enabled')return true;if(path.startsWith('wechat.search.'))return searchDefaults[path.split('.').at(-1)];if(path.startsWith('wechat.proactive.'))return proactiveDefaults[path.split('.').at(-1)];if(path.startsWith('wechat.context.'))return contextDefaults[path.split('.').at(-1)];return value;};
+const getPath = (object, path) => {const value=path.split('.').reduce((value,key)=>value?.[key],object);if(value!==undefined)return value;if(path==='wechat.stickers.collectEnabled')return object.wechat?.stickers?.collectGroups??true;if(path==='wechat.stickers.shareEnabled')return object.wechat?.stickers?.shareGroups??true;if(['wechat.stickers.enabled','wechat.stickers.collectDshEnabled','wechat.stickers.labelCache','wechat.stickers.collectGroups','wechat.stickers.shareGroups'].includes(path))return true;if(path==='wechat.replyLayout.maxMessages')return 2;if(path==='wechat.stickers.candidateLimit')return 8;if(path==='wechat.webReader.enabled')return true;if(path.startsWith('wechat.search.'))return searchDefaults[path.split('.').at(-1)];if(path.startsWith('wechat.proactive.'))return proactiveDefaults[path.split('.').at(-1)];if(path.startsWith('wechat.context.'))return contextDefaults[path.split('.').at(-1)];return value;};
 function syncExtensionProject(result,feature) {
   const previous=state.config, draft=state.draft;
   state.config=result.config;state.revision=result.revision;
@@ -123,7 +124,7 @@ function updateDraftUI() {
   if($('#delete-role'))$('#delete-role').disabled=state.savingAll||roleSaves.size>0||!!state.deletingRole||state.job?.state==='running';
 }
 async function api(route, body, retry = true, options = {}) {
-  const response = await fetch(route, { method: body === undefined ? 'GET' : 'POST', headers: { 'X-Console-Token': state.token, ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}) }, ...(body !== undefined ? { body: JSON.stringify(body) } : {}), signal: AbortSignal.any([...(options.signal?[options.signal]:[]),AbortSignal.timeout(route === '/api/vision-test' ? 65000 : ['/api/voice-studio/preview-voice','/api/voice-studio/preview-engine'].includes(route) ? 150000 : route === '/api/browse' ? 180000 : route === '/api/fish-notebook/write' || /^\/api\/plugins\/[^/]+\/actions\//.test(route) ? 45000 : 20000)]) });
+  const response = await fetch(route, { method: body === undefined ? 'GET' : 'POST', headers: { 'X-Console-Token': state.token, ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}) }, ...(body !== undefined ? { body: JSON.stringify(body) } : {}), signal: AbortSignal.any([...(options.signal?[options.signal]:[]),AbortSignal.timeout(route === '/api/plugins/bundle/download' ? 70000 : route === '/api/vision-test' ? 65000 : ['/api/voice-studio/preview-voice','/api/voice-studio/preview-engine','/api/voice-studio/compare-engines'].includes(route) ? 150000 : route === '/api/browse' ? 180000 : route === '/api/fish-notebook/write' || /^\/api\/plugins\/[^/]+\/actions\//.test(route) ? 45000 : 20000)]) });
   const result = await response.json();
   if (response.status === 401 && retry) {
     const info = await fetch('/api/info').then(r => r.json());
@@ -171,9 +172,9 @@ function overviewPage() {
   const c = state.draft;
   return '<div class="dashboard-grid redesigned-dashboard">'+
     '<section class="card power-card dashboard-hero"><div class="hero-orbits" aria-hidden="true"><span></span><span></span><span></span><i>✳</i></div><div class="power-top"><div class="power-copy"><span class="eyebrow"><i class="dot"></i> WECHATGIRL / 你的微信搭子</span><h2 id="power-title">正在检查连接</h2><p id="power-description">等待本机服务响应。</p></div><button class="power-control" id="power-button" data-action="start" aria-label="启动服务">'+icon('power')+'</button></div><div class="power-bottom"><span id="power-tag" class="status-tag">检查中</span><div class="button-row"><button class="button small" data-action="wechat-open">'+icon('chat')+'打开微信</button><button class="button small" data-action="restart">'+icon('refresh')+'重启</button></div></div></section>'+
-    '<section class="card dashboard-persona"><span class="eyebrow">PERSONA / 当前人格</span><div class="persona-orb">'+icon('person')+'</div><h2>'+escapeHtml(c.persona.default)+'</h2><p>以熟悉的语气，回应每一段对话。</p><a class="text-link" href="#roles">管理人格卡 '+icon('arrow')+'</a></section>'+
-    '<div class="metrics wide"><section class="card"><div class="metric-label">'+icon('chat')+'缓存消息</div><div class="metric-value" id="metric-messages">—<span>条</span></div><p class="metric-note" id="metric-note">本机保留的消息记录</p></section><section class="card"><div class="metric-label">'+icon('person')+'允许的好友</div><div class="metric-value">'+c.wechat.whitelist.private.length+'<span>位</span></div><a class="text-link metric-note" href="#chats">管理好友 '+icon('arrow')+'</a></section><section class="card"><div class="metric-label">'+icon('users')+'允许的群聊</div><div class="metric-value">'+c.wechat.whitelist.groups.length+'<span>个</span></div><p class="metric-note">独立人格 · 独立上下文</p></section></div>'+
     '<section class="card dashboard-connections">'+header('连接状态','从微信到模型，每一步都在这里。','<a class="text-link" href="#connections">连接设置'+icon('arrow')+'</a>')+'<div class="service-track" id="service-track"><div class="loading-state">检查本机连接中…</div></div></section>'+
+    '<div class="metrics wide"><section class="card"><div class="metric-label">'+icon('chat')+'缓存消息</div><div class="metric-value" id="metric-messages">—<span>条</span></div><p class="metric-note" id="metric-note">本机保留的消息记录</p></section><section class="card"><div class="metric-label">'+icon('person')+'允许的好友</div><div class="metric-value">'+c.wechat.whitelist.private.length+'<span>位</span></div><a class="text-link metric-note" href="#chats">管理好友 '+icon('arrow')+'</a></section><section class="card"><div class="metric-label">'+icon('users')+'允许的群聊</div><div class="metric-value">'+c.wechat.whitelist.groups.length+'<span>个</span></div><p class="metric-note">独立人格 · 独立上下文</p></section></div>'+
+    '<section class="card dashboard-persona"><span class="eyebrow">PERSONA / 当前人格</span><div class="persona-orb">'+icon('person')+'</div><h2>'+escapeHtml(c.persona.default)+'</h2><p>以熟悉的语气，回应每一段对话。</p><a class="text-link" href="#roles">管理人格卡 '+icon('arrow')+'</a></section>'+
     '<section class="card dashboard-shortcuts">'+header('常用入口')+'<div class="dashboard-links">'+[['chats','users','聊天管理','添加好友，设置专属回复'],['extensions','plug','能力中心','搜索、工具与插件'],['settings/diagnostics','sliders','连接诊断','检查微信与模型连接']].map(([url,symbol,title,desc])=>'<a href="#'+url+'"><span>'+icon(symbol)+'</span><div><strong>'+title+'</strong><small>'+desc+'</small></div>'+icon('arrow')+'</a>').join('')+'</div></section>'+
     '<section class="card dashboard-activity">'+header('最近动态','消息的来往，都有迹可循。','<a class="text-link" href="#sessions">查看会话'+icon('arrow')+'</a>')+'<div id="recent-list"><div class="loading-state">读取记录中…</div></div></section>'+
     '<section class="card dashboard-defaults"><span class="eyebrow">按你的节奏</span><h2>让聊天自然发生</h2><p>群聊默认：'+(c.wechat.wake_mode==='mention'?'唤醒后回复':'自然参与')+'。每个好友与群聊，都可以拥有自己的设置。</p><a class="button" href="#settings/chat">调整聊天偏好 '+icon('arrow')+'</a></section></div>';
@@ -361,15 +362,33 @@ async function chooseAssistantAdmin(){
   $('#assistant-admin-results').addEventListener('change',event=>{const input=event.target;if(input.type!=='checkbox')return;if(input.checked&&picked.size>=50){input.checked=false;toast('最多选择 50 位管理员。');return;}if(input.checked)picked.add(input.value);else picked.delete(input.value);count();});
   $('#assistant-admin-use').addEventListener('click',()=>{state.draft.wechat.assistant??={};state.draft.wechat.assistant.administrators=[...picked];closeModal();renderPage();updateDraftUI();toast('管理员名单已放入草稿，请保存设置。');});await search();
 }
+function installationHelp() {
+  return `<details class="card setup-help"><summary>第一次使用？查看从安装到首次聊天的完整教程</summary><ol class="setup-instructions space-top">
+    <li><strong>安装并打开 WeChatGirl</strong><p>安装版运行 WeChatGirl-Setup 安装程序，选择程序根目录；便携版先完整解压，再双击根目录 WeChatGirl.exe。升级时先保存设置，从托盘退出旧程序，安装到原目录并保留 data。</p></li>
+    <li><strong>登录匹配微信，找到数据文件夹</strong><p>在下方打开匹配微信并登录。在微信左下角菜单打开“设置”，找到“存储位置”，复制显示的路径，再回到本程序选择文件夹、识别账号并连接验证。</p><a class="text-link" href="#setup/wechat">前往连接微信</a></li>
+    <li><strong>安装 DSH，导入本机插件</strong><p>进入“连接 DSH”，按页内官方入口下载并安装 DSH。打开一次完成初始化，选择程序位置并保存；从 DSH 托盘退出后导入插件，再打开 DSH、启用插件并重新检查。</p><a class="text-link" href="#setup/dsh">前往连接 DSH</a></li>
+    <li><strong>配置账号并选择模型</strong><p>在 DSH 配置自己的模型账号，回到“选择模型”刷新列表，选一个可用的文字聊天模型并保存。图片分流可稍后设置。</p><a class="text-link" href="#setup/model">前往选择模型</a></li>
+    <li><strong>选择发送模式，启动服务</strong><p>进入“选择发送模式”，阅读前台与 Hook 的能力差异后保存；再进入“启动服务”，确认微信读取、消息桥接和模型连接就绪。</p><a class="text-link" href="#setup/sending">选择发送模式</a> · <a class="text-link" href="#setup/start">启动并检查服务</a></li>
+    <li><strong>添加允许的聊天，由你发消息试用</strong><p>搜索并添加一个好友或群聊，保存并应用设置。让对方发一句“你好”；群聊先 @ 助手或使用唤醒词。收到文字回复后，再按需配置人格、表情、语音和其他插件。</p><a class="text-link" href="#setup/chats">选择聊天并试聊</a> · <a class="text-link" href="#setup/features">配置可选功能</a></li>
+  </ol><p class="subtle">每步以界面的实际检查结果为准。跳转不会自动保存设置，也不会替你发送测试消息。</p></details>`;
+}
+function wechatStorageGuide() {
+  return `<div class="reader-location-guide"><h3>先在微信中查看文件夹位置</h3><ol class="setup-instructions">
+    <li><strong>打开微信设置</strong><p>在已登录的匹配微信主窗口，点击左下角菜单，再打开“设置”。</p></li>
+    <li><strong>找到“存储位置”</strong><p>查看微信显示的文件存储路径。有“打开文件夹”时可点击它，再从文件资源管理器地址栏复制完整路径。</p></li>
+    <li><strong>回到这里选择同一个文件夹</strong><p>点击下方“选择文件夹”，选择微信显示的位置；也可将完整路径粘贴到输入框，点击“识别此目录”。支持微信设置显示的存储目录、xwechat_files、账号文件夹或 db_storage。</p></li>
+    <li><strong>核对账号，再连接验证</strong><p>在“当前账号”选择刚才登录的微信账号，再点击“一键连接并验证”。出现“已验证”后继续连接 DSH。</p></li>
+  </ol><p class="subtle">这里选择的是微信数据文件夹，不是 WeChatGirl 安装目录，也不是 Weixin.exe 所在目录。只需查看原位置，无须更改微信存储位置或移动文件。</p></div>`;
+}
 function readerConfigurationCard() {
   const r = state.reader;
   state.readerDraft ??= { dbPath: r?.dbPath ?? '', myWxid: r?.myWxid ?? '', decryptKey: '' };
   const draft = state.readerDraft;
   const accounts = state.readerAccounts ?? [];
   const verified = r?.verified && !readerDirty();
-  return `<section class="card reader-setup">${header('连接自己的微信', '打开匹配微信后，选择账号目录，程序会获取密钥并验证数据库。', '<span class="status-tag ' + (verified ? 'ok' : 'warn') + '">' + (verified ? '已验证' : '待连接') + '</span>', 'folder')}
-    <div class="reader-steps"><span>1. 打开微信</span><span>2. 查找账号目录</span><span>3. 连接并验证</span></div>
-    <div class="form-grid"><div class="field full"><label for="reader-path">微信账号目录</label><div class="input-with-button"><input id="reader-path" data-reader="dbPath" value="${escapeHtml(draft.dbPath)}" placeholder="可选择 xwechat_files、账号文件夹或 db_storage"><button class="button" data-browse="folder" data-target="reader-path">${icon('folder')}选择文件夹</button></div><small>不知道目录在哪时，先点击“自动查找账号”。选择文件夹后会自动识别账号。</small></div>
+  return `<section class="card reader-setup">${header('连接自己的微信', '先在微信“设置 → 存储位置”查看路径，再选择数据文件夹并验证当前账号。', '<span class="status-tag ' + (verified ? 'ok' : 'warn') + '">' + (verified ? '已验证' : '待连接') + '</span>', 'folder')}
+    ${wechatStorageGuide()}
+    <div class="form-grid"><div class="field full"><label for="reader-path">微信数据文件夹（设置中的存储位置）</label><div class="input-with-button"><input id="reader-path" data-reader="dbPath" value="${escapeHtml(draft.dbPath)}" placeholder="粘贴微信设置中的完整存储路径" aria-describedby="reader-path-help"><button class="button" data-browse="folder" data-target="reader-path">${icon('folder')}选择文件夹</button></div><small id="reader-path-help">按微信设置中的路径选择；也可点击“自动查找账号”辅助查找。未找到时先确认已登录并等待消息同步。</small></div>
     <div class="field full"><label for="reader-account">当前账号</label><select id="reader-account" data-reader="myWxid"><option value="">${accounts.length > 1 ? '找到多个账号，请选择当前登录的账号' : '等待识别账号目录'}</option>${accounts.length ? accounts.map(a => `<option value="${escapeHtml(a.dbPath)}" ${draft.dbPath === a.dbPath ? 'selected' : ''}>${escapeHtml(a.myWxid)}${a.ready ? '' : '（等待微信同步）'}</option>`).join('') : draft.myWxid ? `<option value="${escapeHtml(draft.myWxid)}" selected>${escapeHtml(draft.myWxid)}</option>` : ''}</select></div></div>
     <div class="button-row space-top"><button class="button" id="detect-reader">${icon('search')}自动查找账号</button><button class="button" id="scan-reader">识别此目录</button><button class="button primary" data-action="reader-connect">${icon('plug')}一键连接并验证</button></div>
     <p class="reader-progress" id="reader-progress" role="status" aria-live="polite"></p><p id="reader-save-error" class="inline-error" role="alert">${escapeHtml(state.readerError)}</p>
@@ -434,7 +453,7 @@ function setupPage() {
   const progress=guideProgress();state.setupStep??=progress.next;const step=state.setupStep;
   const save='<button class="button primary" data-guide-save>保存设置</button>';
   let content='';
-  if(step==='wechat')content=wechatClientsCard()+'<section class="card">'+header('先登录匹配微信','使用本安装准备的微信客户端，登录自己的账号并等待消息同步。','','chat')+'<div class="button-row"><button class="button primary" data-action="wechat-open">打开匹配微信</button><button class="button" data-repair-wechat>遇到登录或连接问题</button></div><p class="card-description space-top">已在其他微信登录，也需要在这个匹配客户端完成登录。程序只读取你在下一步验证的账号。</p></section>'+readerConfigurationCard()+'<details class="card setup-help"><summary>安装文件或运行环境检查</summary><p class="card-description space-top">运行环境已经内置，通常无需额外安装。只有启动报错时才需要检查。</p><button class="button space-top" data-action="setup">检查内置环境</button></details>';
+  if(step==='wechat')content=installationHelp()+wechatClientsCard()+'<section class="card">'+header('先登录匹配微信','使用本安装准备的微信客户端，登录自己的账号并等待消息同步。','','chat')+'<div class="button-row"><button class="button primary" data-action="wechat-open">打开匹配微信</button><button class="button" data-repair-wechat>遇到登录或连接问题</button></div><p class="card-description space-top">已在其他微信登录，也需要在这个匹配客户端完成登录。程序只读取你在下一步验证的账号。</p></section>'+readerConfigurationCard()+'<details class="card setup-help"><summary>安装文件或运行环境检查</summary><p class="card-description space-top">运行环境已经内置，通常无需额外安装。只有启动报错时才需要检查。</p><button class="button space-top" data-action="setup">检查内置环境</button></details>';
   if(step==='dsh')content=dshInstallCard({header,field,pluginPathField,guide:true})+'<section class="notice plain"><span>DSH 插件未连接时：确认添加的是此页显示的目录，已启用插件，然后从系统托盘完整退出 DSH，再重新打开。关闭主窗口可能只会收起到托盘。</span></section>';
   if(step==='model')content=dshModels.card()+dshModels.visionCard()+'<section class="card"><h3>选择后保存</h3><p class="card-description">先在 DSH 中配置自己的模型账号，再回到这里刷新列表。请选择已开通、支持文字对话的模型，无需手填名称。图片或视频生成模型不适合用作聊天模型。</p><div class="button-row space-top">'+save+'<button class="button" data-guide-step="dsh">返回检查 DSH</button></div><p class="subtle space-top">这里只检查模型是否在当前列表中，不会自动发送测试请求或消耗模型额度。</p></section>';
   if(step==='start')content='<section class="card">'+header('让微信与模型连接起来','前三步检查通过后，启动读取、桥接和模型连接。','','power')+'<ul class="setup-checklist">'+progress.steps.slice(0,3).map(item=>'<li data-guide-check="'+item.id+'"><span class="status-tag '+(item.done?'ok':'warn')+'">'+(item.done?'已通过':'待完成')+'</span><button class="link-button" data-guide-step="'+item.id+'">'+escapeHtml(item.title)+'</button><small>'+escapeHtml(item.detail)+'</small></li>').join('')+'</ul><p id="guide-start-hint" class="card-description space-top"></p><div class="button-row space-top">'+save+'<button class="button primary" data-guide-start data-action="'+(state.status?.running||state.status?.pendingApply?'restart':'start')+'">'+(state.status?.running||state.status?.pendingApply?'应用设置并检查连接':'启动服务')+'</button><a class="button" href="#overview">查看连接详情</a></div><p class="subtle space-top">暂未选择聊天也可以先启动，以便下一步搜索好友或群聊；只会处理已加入允许范围的聊天。</p></section>';
@@ -465,7 +484,8 @@ async function renderPage() {
     if (page === 'extensions') markup = state.capabilitySection==='catalog'?await extensionUI.page():await workspaceLayout.capabilityPage();
     if (page === 'plugins') markup = await extensionUI.pluginsPage({selectedPluginId:currentRoute.section,returnTo:state.pluginReturnHash||'#plugins'});
     if (page === 'stickers') markup = await workspaceLayout.stickersPage();
-    if (page === 'memory') markup = '<section class="card space-top"><div class="card-header"><div><h2>跨聊天人物记忆</h2><p class="card-description">以真实微信身份关联同一个人，分别管理本聊天记忆与允许共享的记忆。</p></div><button class="button" data-people-memory>查看人物记忆</button></div></section>'+await memoryUI.page();
+    if (page === 'memory') markup = await memoryUI.page();
+    if (page === 'voice') markup = '<div id="voice-page" class="music-page"></div>';
     if (page === 'music') markup = '<div id="music-page" class="music-page"></div>';
     if (page === 'sending') markup = '<div class="section-stack">'+sendModeCard(state.draft.wechat.textTransport?.mode==='foreground'?'foreground':'native',header)+'</div>';
     if (page === 'setup') { if(!$('#page-body .setup-guide')||!state.guideCatalog){const checks=await Promise.allSettled([api('/api/reader-config'),api('/api/dsh-models')]);if(checks[0].status==='fulfilled')state.reader=checks[0].value;if(checks[1].status==='fulfilled')state.guideCatalog=checks[1].value;else state.guideCatalog={available:false,models:[]};}markup=setupPage(); }
@@ -500,6 +520,7 @@ async function renderPage() {
   host.removeAttribute('aria-busy'); updateDraftUI(); paintStatus(); paintReaderSetup();
   if($('#wechat-clients'))void inspectWeChatClients();
   if(page==='music')mountMusicPage($('#music-page'),{api,esc:escapeHtml,toast,chats:['private','group'].flatMap(kind=>(state.config.wechat.whitelist[kind==='group'?'groups':'private']??[]).map(value=>{const key='wechat:'+kind+':'+value;return {key,name:state.names.get(key)??key};}))});
+  if(page==='voice')mountVoiceStudioPage($('#voice-page'),{api,esc:escapeHtml,toast,chats:['private','group'].flatMap(kind=>(state.config.wechat.whitelist[kind==='group'?'groups':'private']??[]).map(value=>{const key='wechat:'+kind+':'+value;return {key,name:state.names.get(key)??key};}))});
   if(page==='setup'&&state.setupStep==='features')void mountFeatureSetup($('#feature-setup-list'),{api,project:state.draft,esc:escapeHtml});
   if(page==='settings'&&state.settingsSection==='connections'||page==='setup'&&state.setupStep==='model')void dshModels.mount();
   if(page==='setup')paintSetupGuide();
@@ -655,7 +676,7 @@ async function discoverReader(automatic) {
     else {
       state.readerDraft.myWxid = '';
       if (accounts.length > 1) state.readerDraft.dbPath = '';
-      else state.readerError = '未找到微信账号目录。请在微信登录并等待同步，再选择文件夹；可在微信“设置 → 存储空间”查看文件保存位置。';
+      else state.readerError = '未找到微信账号目录。请打开已登录微信的“设置 → 存储位置”，复制文件存储路径，回到这里选择该文件夹并点击“识别此目录”；若尚未同步，请等待后重试。';
     }
   } catch (error) { state.readerError = error.message; }
   finally { state.readerScanning = false; await renderPage(); $('#reader-account')?.focus(); }
@@ -842,7 +863,7 @@ function applyTheme(theme) { document.documentElement.dataset.theme = theme; win
 let savedTheme; try { savedTheme = localStorage.getItem('wechatagent-console-theme'); } catch {}
 applyTheme(window.desktop?.initialTheme ?? (savedTheme === 'dark' || savedTheme === 'light' ? savedTheme : matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
 $('#theme-button').addEventListener('click', () => { const theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'; applyTheme(theme); try { localStorage.setItem('wechatagent-console-theme', theme); } catch {} });
-initAppearance({modal,closeModal,toast,escapeHtml,icon});
+initAppearance({api,modal,closeModal,toast,escapeHtml,icon});
 $('#refresh-button').addEventListener('click', async () => {
   if (state.refreshing) return;
   const button=$('#refresh-button'); state.refreshing=true;button.disabled=true;button.classList.add('is-refreshing');button.setAttribute('aria-label','正在刷新');

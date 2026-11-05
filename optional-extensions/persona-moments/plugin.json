@@ -31,7 +31,7 @@
   },
   "settings": {
     "writeTime": "21:30",
-    "mode": "preview",
+    "mode": "publish",
     "workspaceRoot": "",
     "pythonExe": "",
     "adminChatKey": "",

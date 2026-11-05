@@ -12,6 +12,7 @@ const source=event=>event.data?.source??event.data?.message?.source??{};
 export function windowRecord(row){
   const quote=row.quoteReply,forward=row.forwardedRecord;
   return {id:row.archiveSeq,at:row.timestamp,speaker:row.outgoing?'AI':row.sender_name||row.sender_id,
+    ...(!row.outgoing&&(row.sender_key||row.sender_person||row.sender_wxid)?{personId:row.sender_key||row.sender_person||digest(row.sender_wxid)}:{}),
     ...(row.kind==='group'?{memberId:row.sender_key||row.sender_id}:{}),
     text:row.text,...(row.outgoing?{delivery:row.delivery_status??'unverified'}:{}),
     ...(quote?{quote:{speaker:quote.reference?.senderName,text:quote.reference?.text,at:quote.reference?.time},reply:quote.reply}:{}),

@@ -1,0 +1,41 @@
+{
+  "id": "cosyvoice-engine",
+  "name": "原生肥鱼 CosyVoice3",
+  "version": "1.0.1",
+  "apiVersion": 2,
+  "host": "wechatagent",
+  "author": "my12yyds",
+  "description": "提供专用肥鱼CosyVoice3本机常驻合成，与Breeze参考克隆分开选择。需独立准备模型与环境；插件ZIP不含权重。首次加载较慢，驻留后可复用。它只选择设备引擎，微信发送仍受声音插件权限和聊天范围控制；外接API、自定义参考与自然A保持各自路径。",
+  "permissions": [],
+  "requiresHostFeatures": [
+    "cosyvoice-speech-v1"
+  ],
+  "settings": {
+    "engine": "breeze",
+    "port": 19886,
+    "allowComparison": true
+  },
+  "configSchema": {
+    "engine": {
+      "type": "string",
+      "title": "内置肥鱼语音引擎",
+      "enum": [
+        "breeze",
+        "cosyvoice"
+      ],
+      "description": "Breeze沿用现有语音；CosyVoice3让内置明亮可爱B/温柔使用专用肥鱼权重直接生成，不再经过RVC。自然A和自定义参考仍走Breeze，外接API优先。保存后重启语音服务，新任务使用新选择。"
+    },
+    "port": {
+      "type": "integer",
+      "title": "专用本机服务端口",
+      "minimum": 1024,
+      "maximum": 65534,
+      "description": "专用本机服务端口，默认19886；不需要公网地址。更改后重启语音服务，注意不要与Breeze、唱歌或其他程序端口重复。"
+    },
+    "allowComparison": {
+      "type": "boolean",
+      "title": "允许本机同文本对比试听",
+      "description": "开启后可在语音音色页用同一句文字分别生成Breeze和CosyVoice3试听，仅在本机播放，不发微信。即使当前选择Breeze，也会准备Cosy服务并占用部分内存/显存；关闭则禁止对比。"
+    }
+  }
+}

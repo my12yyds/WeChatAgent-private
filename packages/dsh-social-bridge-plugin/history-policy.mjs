@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import {memoryPluginPolicy} from '../plugin-api/memory-policy.mjs';
 
 export const HISTORY_POLICY=Symbol.for('wechatagent.chat-history.v1');
 export const HISTORY_DEFAULTS=Object.freeze({enabled:false,mode:'bounded',restoreHistory:true,windowStrategy:'rolling',recentMessages:40,recentChars:12000,coldWakeMinutes:30,summaryChars:3200,summaryInputChars:24000,maxSessionTurns:32,maxSessionEvents:1500,maxContextTokens:20000,maxContextChars:64000,maxAgeHours:168});
@@ -8,7 +9,7 @@ const ranges={recentMessages:[4,100],recentChars:[2000,24000],coldWakeMinutes:[0
  * choices (including disabled history or rolling windows) remain authoritative. */
 export function migrateHistorySettings(config){
   if(!config?.wechat||Array.isArray(config.wechat)||Object.hasOwn(config.wechat,'history'))return false;
-  config.wechat.history={...HISTORY_DEFAULTS,enabled:true,mode:'window',windowStrategy:'append',recentMessages:8,recentChars:4000,chats:{}};
+  config.wechat.history={...HISTORY_DEFAULTS,enabled:true,mode:'window',windowStrategy:'append',recentMessages:40,recentChars:12000,coldWakeMinutes:0,chats:{}};
   return true;
 }
 export function validateHistorySettings(value){
@@ -32,7 +33,9 @@ export function historyPolicy(wechat={},key){
 }
 export function readHistoryPolicy(root,key){
   const file=path.join(root,'config/wechatagent.json');
-  return historyPolicy(fs.existsSync(file)?JSON.parse(fs.readFileSync(file,'utf8').replace(/^\uFEFF/,'')).wechat:{},key);
+  const policy=historyPolicy(fs.existsSync(file)?JSON.parse(fs.readFileSync(file,'utf8').replace(/^\uFEFF/,'')).wechat:{},key),memory=memoryPluginPolicy(root,key);
+  if(!memory.active)return policy;
+  return {...policy,recentMessages:memory.settings.recentMessages,recentChars:Math.min(memory.settings.recentChars,Math.max(2000,Math.floor(policy.maxContextChars*.8)-policy.summaryChars-8001)),coldWakeMinutes:memory.settings.coldWakeMinutes};
 }
 export function sessionSize(session){
   const events=session.snapshotEvents(),nodes=new Set(session.surface.nodes);

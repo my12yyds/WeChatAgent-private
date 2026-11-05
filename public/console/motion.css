@@ -240,7 +240,7 @@ summary:hover{color:var(--text)}
 #job-title.motion-changed{animation:motion-text-swap .45s var(--ease-out)}
 
 /* 顶栏"更多"菜单中的主题按钮：横向排布，避免文字竖排 */
-.topbar-more #theme-button{width:auto;height:auto;min-height:42px;justify-content:flex-start;gap:10px;padding:0 12px;white-space:nowrap;font-size:12px;color:var(--text)}
+.topbar-more #theme-button{width:auto;height:auto;min-height:42px;justify-content:flex-start;gap:10px;padding:0 12px;white-space:nowrap;font-size:calc(12px * var(--ui-font-scale,1));color:var(--text)}
 
 /* ---------- 状态标签 ---------- */
 .status-tag{transition:background .35s,color .35s}

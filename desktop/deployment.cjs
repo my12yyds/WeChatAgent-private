@@ -11,6 +11,7 @@ async function bootstrapDeployment(resourcesPath, dataHome, progress = () => {},
   const manifest = JSON.parse(fs.readFileSync(manifestFile, 'utf8'));
   const dshBundled = manifest.dshBundled !== false;
   const workspace = path.join(dataHome, 'workspace');
+  const firstInstall = !fs.existsSync(path.join(workspace,'config/wechatagent.json'));
   const previousDistribution=path.join(workspace,'config/distribution.json');
   const previousSettings=fs.existsSync(previousDistribution)?JSON.parse(fs.readFileSync(previousDistribution,'utf8').replace(/^\uFEFF/,'')):{};
   const externalDshHome=options.externalDshHome || previousSettings.externalDshHome || process.env.DSH_HOME || path.join(require('node:os').homedir(),'.dsh');
@@ -76,6 +77,14 @@ async function bootstrapDeployment(resourcesPath, dataHome, progress = () => {},
     config.runtime.python = python;
     config.runtime.dshDesktop = dshBundled ? dsh : '';
     fs.writeFileSync(configFile, JSON.stringify(config, null, 2) + '\n');
+  }
+  if(firstInstall&&Array.isArray(manifest.essentialPlugins)&&manifest.essentialPlugins.length){
+    progress('正在准备基础插件（默认关闭）…');
+    const {pathToFileURL}=require('node:url');
+    const {PluginInstaller}=await import(pathToFileURL(path.join(workspace,'packages/plugin-api/installer.mjs')).href);
+    const {BUNDLED_PLUGINS}=await import(pathToFileURL(path.join(workspace,'packages/plugin-api/bundled.mjs')).href);
+    const installer=new PluginInstaller(workspace);
+    try{for(const id of manifest.essentialPlugins){const bundle=BUNDLED_PLUGINS.find(b=>b.id===id&&b.essential&&b.zip);if(!bundle)throw Error('基础插件登记无效。');if(fs.existsSync(path.join(workspace,'plugins',id)))continue;const preview=installer.inspect({name:id+'.zip',zip:fs.readFileSync(path.join(workspace,bundle.zip)).toString('base64')});installer.install({ticket:preview.ticket,revision:preview.revision});}}finally{installer.dispose();}
   }
   const distributionFile = path.join(workspace, 'config', 'distribution.json');
   if (fs.existsSync(distributionFile)) {

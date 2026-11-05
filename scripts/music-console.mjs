@@ -1,3 +1,4 @@
+import {MusicLibrary} from '../packages/voice-studio/library.mjs';
 import {createNeteaseClient} from '../packages/netease/client.mjs';
 import {readSendingMode} from '../packages/wechat-send-policy.mjs';
 import {VoiceJobs} from '../packages/voice-studio/jobs.mjs';
@@ -7,7 +8,7 @@ export function createMusicConsole(root,{client=createNeteaseClient(root),offici
   let loginTimer,officialState={state:'idle'};
   function watchLogin(){clearTimeout(loginTimer);loginTimer=setTimeout(async()=>{try{await client.checkLogin();}catch{}if(['waiting','confirm','retrying','saving'].includes(client.status().login?.state))watchLogin();},3000);loginTimer.unref?.();}
   return {
-    snapshot:()=>({sendingMode:readSendingMode(root),account:{...client.status(),...(officialState.state!=='idle'&&!client.status().loggedIn?{login:officialState}:{})},officialLoginAvailable:!!officialLogin,songs:new VoiceJobs(root).songs()}),
+    snapshot:()=>({sendingMode:readSendingMode(root),account:{...client.status(),...(officialState.state!=='idle'&&!client.status().loggedIn?{login:officialState}:{})},officialLoginAvailable:!!officialLogin,songs:new MusicLibrary(root).list()}),
     async action(action,body={}){
       try{
       if(action==='official-login'){

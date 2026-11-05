@@ -1,8 +1,9 @@
 ﻿param(
- [string]$Version='0.5.4',
+ [string]$Version='0.5.5',
  [string]$Baseline='D:\weixiagen\release\archive\WeChatAgent-0.4.3',
  [string]$ClientRoot='D:\weixiagen\data\workspace\state\hook\wechat-4.1.10.27',
  [string]$ReaderKeyDll='',
+ [string]$VoiceComponentsZip='',
  [string]$OutputDirectory='',
  [string]$StagingDirectory=''
 )
@@ -14,6 +15,15 @@ if(!$StagingDirectory){$StagingDirectory="D:\weixiagen\release\WeChatGirl-$Versi
 $stage=[IO.Path]::GetFullPath($StagingDirectory).TrimEnd('\')
 $baselinePath=(Resolve-Path -LiteralPath $Baseline).Path.TrimEnd('\')
 $clientPath=(Resolve-Path -LiteralPath $ClientRoot).Path.TrimEnd('\')
+if(!$VoiceComponentsZip){
+ $voiceSpec=Get-Content -LiteralPath (Join-Path $repo 'packaging/windows/voice-components.json') -Raw|ConvertFrom-Json
+ $registeredArchive=Join-Path (Split-Path -Parent $repo) ('release/artifacts-'+$voiceSpec.release.TrimStart('v')+'/'+$voiceSpec.name)
+ if(Test-Path -LiteralPath $registeredArchive){$VoiceComponentsZip=$registeredArchive}
+}
+if($VoiceComponentsZip){
+ & node (Join-Path $repo 'scripts/verify-voice-components.mjs') $VoiceComponentsZip
+ if($LASTEXITCODE -ne 0){throw 'Voice component archive failed verification; no staging directory was created.'}
+}
 $readerKeyRelative='components/weflow-cli/resources/key/win32/x64/wx_key.dll'
 if(!$ReaderKeyDll){$ReaderKeyDll=Join-Path $baselinePath ('app/resources/project/'+$readerKeyRelative)}
 & node (Join-Path $repo 'scripts/runtime-components.mjs') file $ReaderKeyDll
@@ -42,9 +52,14 @@ Copy-Tree $baselineApp (Join-Path $stage 'app') @(
 ) @('storage.ini','*.token','uninstall.exe','Uninstall WeChatGirl.exe','Uninstall WeChatAgent.exe','uninstallerIcon.ico')
 $project=Join-Path $resources 'project'
 New-Item -ItemType Directory -Path $project -Force|Out-Null
+$pluginCatalog=Get-Content -LiteralPath (Join-Path $repo 'packages/plugin-distribution/catalog.json') -Raw|ConvertFrom-Json
+$corePluginSources=@($pluginCatalog.entries|Where-Object {$_.essential}|ForEach-Object {$_.source+'/'})
+$corePluginArchives=@($pluginCatalog.entries|Where-Object {$_.essential}|ForEach-Object {'optional-extensions/packages/'+$_.file;'optional-extensions/packages/'+$_.file+'.sha256'})
 $sourceFiles=@(& git -C $repo -c core.quotepath=false ls-files --cached --others --exclude-standard)
 if($LASTEXITCODE -ne 0){throw 'Could not enumerate source files.'}
 foreach($relative in $sourceFiles){
+ if($relative.StartsWith('optional-extensions/') -and $relative -ne 'optional-extensions/README.md' -and $relative -notin @('optional-extensions/group-behavior/lib/policy.mjs','optional-extensions/speech-recognition/lib/diagnostics.mjs','optional-extensions/speech-recognition/lib/recognize.mjs','optional-extensions/speech-recognition/assets/config-test.wav','optional-extensions/speech-recognition/LICENSE','optional-extensions/speech-recognition/UPSTREAM.json') -and $relative -notin $corePluginArchives){$isCorePlugin=$false;foreach($prefix in $corePluginSources){if($relative.StartsWith($prefix)){$isCorePlugin=$true;break}};if(-not $isCorePlugin){continue}}
+ if($relative -match '^scripts/test-'){continue}
  if($relative -eq 'deployment.json' -or $relative -match '(^|/)(?:\.git|state|node_modules|__pycache__)(/|$)|\.tmp$|^\.github/'){continue}
  if($relative -match '^config/' -and $relative -ne 'config/wechatagent.example.json'){throw 'Private config in source set.'}
  if($relative -match '^roles/' -and $relative -ne 'roles/示例助手.md'){throw 'Private persona in source set.'}
@@ -79,10 +94,7 @@ $newExe=Join-Path $stage 'app/WeChatGirl.exe'
 if(Test-Path -LiteralPath $oldExe){Move-Item -LiteralPath $oldExe -Destination $newExe}
 if(!(Test-Path -LiteralPath $newExe)){throw 'Desktop executable missing.'}
 & (Join-Path $repo 'scripts/set-windows-exe-icon.ps1') -Executable $newExe -Icon (Join-Path $repo 'desktop/icon.ico')
-foreach($name in @('voice-python','voice-wsl')){
- $source=Join-Path $baselinePath "data/$name"
- if(Test-Path -LiteralPath $source){Copy-Tree $source (Join-Path $stage "data/$name") @('.git','__pycache__','Cache','.temp') @('*.token','*.log','*.pyc','*.lock')}
-}
+# Voice environments are distributed as a reviewed archive, not copied from live data.
 $hashes=[ordered]@{}
 Get-ChildItem -LiteralPath $project -File -Recurse|Sort-Object FullName|ForEach-Object{
  $relative=$_.FullName.Substring($project.Length+1).Replace('\','/')
@@ -91,10 +103,10 @@ Get-ChildItem -LiteralPath $project -File -Recurse|Sort-Object FullName|ForEach-
 $seed=($hashes.GetEnumerator()|ForEach-Object{$_.Key+':'+$_.Value}) -join [Environment]::NewLine
 $sha=[Security.Cryptography.SHA256]::Create()
 try{$buildId=([BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($seed))).Replace('-','').ToLowerInvariant()).Substring(0,16)}finally{$sha.Dispose()}
-$manifest=[ordered]@{version=$Version;packageVersion=$Version;buildId=$buildId;builtAt=[DateTime]::UtcNow.ToString('o');runtimeRevision='db3bce768f85';wechatVersion='4.1.10.27';dshBundled=$false;files=@($hashes.Keys);sourceHashes=$hashes}
+$manifest=[ordered]@{version=$Version;packageVersion=$Version;buildId=$buildId;builtAt=[DateTime]::UtcNow.ToString('o');runtimeRevision='db3bce768f85';wechatVersion='4.1.10.27';dshBundled=$false;pluginDistribution='core';essentialPlugins=@('people-memory','persona-studio');files=@($hashes.Keys);sourceHashes=$hashes}
 [IO.File]::WriteAllText((Join-Path $project 'deployment.json'),($manifest|ConvertTo-Json -Depth 6),[Text.UTF8Encoding]::new($false))
 & (Join-Path $repo 'scripts/build-launcher.ps1') -OutputPath (Join-Path $stage 'WeChatGirl.exe')
-$guide=@("WeChatGirl $Version | Windows 10/11 x64",'请先完整解压，再双击根目录 WeChatGirl.exe，无须打开命令窗口。','不要在压缩包中运行，也不要只复制一个 EXE。程序文件在 app，首次启动会在同级 data 保存配置。','DSH 需单独安装，请跟随首次配置向导完成连接。','可选语音组件不包含所有模型，请参阅声音工作室说明。','升级前保存设置并从托盘完整退出程序，保留原有 data。安装版使用 Windows 已安装的应用或 app/Uninstall WeChatGirl.exe 卸载；便携版退出后删除程序目录即可，数据需自行保留。') -join [Environment]::NewLine
+$guide=@("WeChatGirl $Version | Windows 10/11 x64",'请先完整解压，再双击根目录 WeChatGirl.exe，无须打开命令窗口。','不要在压缩包中运行，也不要只复制一个 EXE。程序文件在 app，首次启动会在同级 data 保存配置。','DSH 需单独安装，请跟随首次配置向导完成连接。','需要本地语音时，在音乐页下载并导入语音组件 ZIP；组件不包含全部模型。','升级前保存设置并从托盘完整退出程序，保留原有 data。安装版使用 Windows 已安装的应用或 app/Uninstall WeChatGirl.exe 卸载；便携版退出后删除程序目录即可，数据需自行保留。') -join [Environment]::NewLine
 [IO.File]::WriteAllText((Join-Path $stage 'README-portable.txt'),$guide,[Text.UTF8Encoding]::new($false))
-& (Join-Path $repo 'scripts/build-release.ps1') -PayloadRoot $stage -OutputDirectory $OutputDirectory -Version $Version
+& (Join-Path $repo 'scripts/build-release.ps1') -PayloadRoot $stage -OutputDirectory $OutputDirectory -Version $Version -VoiceComponentsZip $VoiceComponentsZip
 Write-Host "Ready: $stage"

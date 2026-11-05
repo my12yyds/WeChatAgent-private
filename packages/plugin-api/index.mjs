@@ -1,3 +1,8 @@
+import {MusicPreferences} from '../voice-studio/music-preferences.mjs';
+import {songPlayback} from '../voice-studio/segments.mjs';
+import {ArchiveMemory} from './archive-memory.mjs';
+import {filterMemoryOverrides} from '../dsh-social-bridge-plugin/continuity-memory.mjs';
+import {localEmbeddings} from './embeddings.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import {PluginProcess} from './process.mjs';
@@ -17,11 +22,12 @@ export const TOOL_POLICY=Symbol.for('wechatagent.extension-tools.v1');
 
 const text=value=>String(value??'').slice(0,12000);
 export class PluginRuntime{
-  constructor({root,accountScope='unbound',isAllowed=()=>true,historyFor=()=>[],rowsForDate=()=>[],personaFor=()=>{throw fail('PLUGIN_PERSONA_UNAVAILABLE');},generateText,readAudio,taskControl,requestMedia,voiceJobs,isBusy=()=>false,canSchedule=()=>true,now=Date.now,log=()=>{},fetchText=safeFetch,toolTimeoutMs=8000}){
-    this.root=path.resolve(root);this.accountScope=hash(accountScope);this.isAllowed=isAllowed;this.historyFor=historyFor;this.log=log;this.fetchText=fetchText;
+  constructor({root,accountScope='unbound',isAllowed=()=>true,historyFor=()=>[],archiveFor=()=>[],rowsForDate=()=>[],personaFor=()=>{throw fail('PLUGIN_PERSONA_UNAVAILABLE');},generateText,readAudio,taskControl,requestMedia,voiceJobs,isBusy=()=>false,canSchedule=()=>true,now=Date.now,log=()=>{},fetchText=safeFetch,toolTimeoutMs=8000,maxWorkers=16}){
+    this.root=path.resolve(root);this.accountScope=hash(accountScope);this.isAllowed=isAllowed;this.historyFor=historyFor;this.archiveFor=archiveFor;this.log=log;this.fetchText=fetchText;
     this.records=new Map();this.dirty=true;this.revision='';this.closed=false;
     this.readAudio=readAudio??createAudioReader(root);
     this.accountBound=accountScope!=='unbound'&&!!accountScope;this.accountId=/^[a-f0-9]{64}$/.test(accountScope)?accountScope:hash(accountScope);Object.assign(this,{rowsForDate,personaFor,generateText,taskControl,requestMedia,voiceJobs:voiceJobs??new VoiceJobs(this.root),isBusy,canSchedule,now});this.utilityCalls=0;this.scheduleRetry=new Map();this.voiceCooldown=new Map();
+    this.maxWorkers=Number.isSafeInteger(maxWorkers)?Math.max(1,Math.min(24,maxWorkers)):16;
     this.toolTimeoutMs=Math.max(20,Math.min(8000,toolTimeoutMs));
     const base=directory(root,'plugins');try{this.watcher=fs.watch(base,{recursive:true},()=>{this.dirty=true;});this.watcher.on('error',()=>{this.dirty=true;});this.watcher.unref();}catch{}
   }
@@ -53,7 +59,7 @@ export class PluginRuntime{
       const setting=saved.config.plugins[item.id];if(this.records.has(item.id))continue;
       const record={...item,generation:setting?.generation};this.records.set(item.id,record);
       if(item.invalid||!setting?.enabled||item.permissions.some(p=>!setting.permissions?.includes(p)))continue;
-      if(started>=8||Date.now()>=deadline){record.failure='启用的插件过多或加载超时，请停用部分插件后重新保存。';continue;}
+      if(started>=this.maxWorkers||Date.now()>=deadline){record.failure='启用的插件过多或加载超时，请停用部分插件后重新保存。';continue;}
       started++;
       try{
         const worker=new PluginProcess(item,{onFailure:reason=>{if(reason!=='PLUGIN_DISABLED'){record.failure=reason;this.log(`[plugin:${item.id}] ${reason}`);}}});
@@ -66,8 +72,8 @@ export class PluginRuntime{
   }
   toolDefinitions(key){if(typeof key!=='string'||!/^wechat:(private|group):[1-9]\d*$/.test(key))return [];return [...this.records.values()].filter(record=>this.active(record,key)).flatMap(record=>(record.process.tools??[]).map(tool=>({...tool,name:record.id+'__'+tool.id,pluginId:record.id})));}
   bindingRevision(key){return this.toolDefinitions(key).map(tool=>tool.name+':'+this.records.get(tool.pluginId).revision+':'+this.records.get(tool.pluginId).generation).join('|');}
-  instructions(){return '';}
-  context(record,turn){return {chat:{key:turn.conversationKey,platform:'wechat',kind:turn.conversationKey.split(':')[1],id:turn.conversationKey.split(':')[2],name:turn.conversationName??turn.conversationKey},account:{id:this.accountId},now:this.now(),actor:{id:turn.actorId??'',administrator:assistantSenderAllowed(JSON.parse(fs.readFileSync(path.join(this.root,'config/wechatagent.json'),'utf8').replace(/^\uFEFF/,'' )).wechat,turn.conversationKey,turn.actorId)},sessionId:turn.sessionId??'',settings:structuredClone({...record.settings,...this.policy().config.plugins[record.id]?.settings})};}
+  instructions(key){const record=this.records.get('voice-studio');if(!record||!this.active(record,key,'voice'))return '';try{const preference=new MusicPreferences(this.root).snapshot();return '[音乐发送设置] 普通点歌默认：'+preference.label+'。本轮用户明确要求只唱1分钟或完整唱一遍时优先遵从，不改变已保存默认；没有明确要求时不要擅自改模式。片段只处理最多60秒并发送一条；完整翻唱处理整首并按每段最长55秒发送，最长支持10分钟。以工具返回的modeLabel为准，staged不是已送达。';}catch{return '';}}
+  context(record,turn){return {engagement:turn.engagement,chat:{key:turn.conversationKey,platform:'wechat',kind:turn.conversationKey.split(':')[1],id:turn.conversationKey.split(':')[2],name:turn.conversationName??turn.conversationKey},account:{id:this.accountId},now:this.now(),actor:{id:turn.actorId??'',administrator:assistantSenderAllowed(JSON.parse(fs.readFileSync(path.join(this.root,'config/wechatagent.json'),'utf8').replace(/^\uFEFF/,'' )).wechat,turn.conversationKey,turn.actorId)},sessionId:turn.sessionId??'',settings:structuredClone({...record.settings,...this.policy().config.plugins[record.id]?.settings})};}
   service(record,turn,signal,readOnly=false){
     const check=permission=>{if(signal.aborted||!this.active(record,turn.conversationKey,permission))throw fail('PLUGIN_PERMISSION_DENIED');};
     return async(method,args)=>{
@@ -75,9 +81,10 @@ export class PluginRuntime{
         check('voice');if(!Array.isArray(args)||Buffer.byteLength(JSON.stringify(args))>8192)throw fail('VOICE_REQUEST_INVALID');
         if(method==='voice.enqueue'){
           if(readOnly)throw fail('PLUGIN_HOOK_READ_ONLY');let request=voiceRequest(args[0]),settings=this.policy().config.plugins[record.id]?.settings??{};
+          if(request.kind==='song')request={...request,playbackMode:turn.songPlaybackMode??request.playbackMode??new MusicPreferences(this.root).snapshot().mode};
           if(turn.networkOptOut){if(request.kind!=='song'||!new SavedSongs(this.root).find(request,settings))throw fail('PLUGIN_NETWORK_DISABLED_FOR_TURN');request={...request,cachedOnly:true};}
           turn.voiceRequests??=[];if(turn.voiceRequests.length>=3)throw fail('VOICE_QUEUE_FULL');turn.voiceRequests.push({id:record.id,generation:record.generation,request,fallbackText:request.kind==='speech'?request.text:undefined});
-          return {staged:true,savedSongReady:request.cachedOnly===true};
+          return {staged:true,savedSongReady:request.cachedOnly===true,...(request.kind==='song'?{playbackMode:request.playbackMode,modeLabel:songPlayback(request.playbackMode).label}:{})};
         }
         if(method==='voice.cancel'){if(readOnly)throw fail('PLUGIN_HOOK_READ_ONLY');return this.voiceJobs.cancel(turn.conversationKey,record.id,args[0]?.id);}
         if(method==='voice.status')return this.voiceJobs.status(turn.conversationKey,record.id);
@@ -90,8 +97,8 @@ export class PluginRuntime{
         const request=adminDshRequest(this.root,turn,args[0]);const value=await this.taskControl(request.action,request.body);check('dsh_tasks');adminDshRequest(this.root,turn,args[0]);return value;
       }
       if(method.startsWith('people.')){
-        check('people_memory');const memory=new PeopleMemory({root:this.root,accountScope:this.accountScope,accountId:this.accountId,pluginId:record.id,now:this.now,allowedSource:key=>this.active(record,key,'people_memory')});
-        if(method==='people.current'){memory.capture(turn);return memory.current(turn);}
+        check('people_memory');const memory=new PeopleMemory({root:this.root,accountScope:this.accountScope,accountId:this.accountId,pluginId:record.id,now:this.now,settings:this.policy().config.plugins[record.id]?.settings,allowedSource:key=>this.active(record,key,'people_memory')});
+        if(method==='people.current'){if(this.policy().config.plugins[record.id]?.settings?.autoRemember!==false)memory.capture(turn);return memory.current(turn);}
         if(method==='people.recall')return memory.recall(turn,args[0]??{});
         if(readOnly)throw fail('PLUGIN_HOOK_READ_ONLY');
         if(method==='people.remember')return memory.remember(turn,args[0]);
@@ -137,6 +144,7 @@ export class PluginRuntime{
         if(!this.requestMedia)throw fail('PLUGIN_MEDIA_HOST_UNAVAILABLE');
         const action=method==='media.search'?'search':'read',value=await this.requestMedia(action,args[0],{signal});check('web_fetch');return value;
       }
+      if(method==='model.embed'){check('model_embed');if(readOnly||turn.networkOptOut)throw fail('EMBEDDING_NOT_ALLOWED');const result=await localEmbeddings(this.policy().config.plugins[record.id]?.settings??{},args[0],{signal});check('model_embed');return result;}
       if(method==='model.generate'){
         check('model_generate');if(readOnly)throw fail('PLUGIN_HOOK_READ_ONLY');if(!this.generateText)throw fail('PLUGIN_MODEL_UNAVAILABLE');if(this.utilityCalls>=2||(turn.modelCalls=(turn.modelCalls??0)+1)>3)throw fail('PLUGIN_MODEL_BUSY');
         const options=args[0];if(!options||Object.keys(options).some(key=>!['prompt','maxTokens','maxChars','timeoutMs'].includes(key)))throw fail('PLUGIN_MODEL_OPTIONS_INVALID');
@@ -154,6 +162,7 @@ export class PluginRuntime{
         if(Buffer.byteLength(JSON.stringify(data))>256*1024)throw fail('PLUGIN_STORAGE_LIMIT');
         check('storage');atomicJson(file,data);return {ok:true};
       }
+      if(method==='memory.search'||method==='memory.index'){check('history_read');if(record.id!=='memory-retrieval'||readOnly)throw fail('MEMORY_SEARCH_NOT_ALLOWED');const settings={...record.settings,...this.policy().config.plugins[record.id]?.settings};if(turn.networkOptOut)settings.embeddingEnabled=false;if(settings.embeddingEnabled)check('model_embed');this.archiveIndex??=new ArchiveMemory({root:this.root,scope:this.accountScope,pageFor:this.archiveFor});const allowed=()=>this.active(record,turn.conversationKey,'history_read');if(method==='memory.index')return this.archiveIndex.start(turn.conversationKey,settings,allowed);return this.archiveIndex.search(turn.conversationKey,args[0]??{},settings,allowed,rows=>filterMemoryOverrides(rows,new PeopleMemory({root:this.root,accountScope:this.accountScope,accountId:this.accountId,settings:this.policy().config.plugins['people-memory']?.settings,allowedSource:key=>allowedChat(this.root,key)}).overrides(turn)));}
       if(method==='history.recent'){
         check('history_read');const {limit=20,...extra}=args[0]??{};if(Object.keys(extra).length||!Number.isInteger(limit)||limit<1||limit>100)throw fail('PLUGIN_HISTORY_LIMIT');
         const rows=[];let bytes=0;
@@ -191,14 +200,18 @@ export class PluginRuntime{
     }catch(error){turn.replies.splice(before);throw error;}
     finally{controller.abort();signal?.removeEventListener('abort',abort);}
   }
+  memoryOverrides(turn){const record=this.records.get('people-memory');if(!record||!this.active(record,turn.conversationKey,'people_memory'))return [];return new PeopleMemory({root:this.root,accountScope:this.accountScope,accountId:this.accountId,settings:this.policy().config.plugins['people-memory']?.settings,allowedSource:key=>this.active(record,key,'people_memory')}).overrides(turn);}
   async hooks(name,value,turn,signal){
     const results=[],deadline=Date.now()+2000;
     for(const record of this.records.values()){
       if(!this.active(record,turn.conversationKey)||!record.process.hooks?.includes(name))continue;
       const timeoutMs=Math.min(800,deadline-Date.now());if(timeoutMs<=0)break;
       const controller=new AbortController(),abort=()=>controller.abort();signal?.addEventListener('abort',abort,{once:true});if(signal?.aborted)abort();
-      try{const result=await record.process.call('hook',name,value,this.context(record,turn),this.service(record,turn,controller.signal,true),{signal:controller.signal,timeoutMs});
-        if(name==='after-response'&&result?.text!==undefined&&!this.active(record,turn.conversationKey,'reply'))delete result.text;
+      try{if(name==='before-context'&&record.id==='people-memory'&&this.active(record,turn.conversationKey,'people_memory')&&this.policy().config.plugins[record.id]?.settings?.autoRemember!==false)new PeopleMemory({root:this.root,accountScope:this.accountScope,accountId:this.accountId,pluginId:record.id,now:this.now,settings:this.policy().config.plugins[record.id]?.settings,allowedSource:key=>this.active(record,key,'people_memory')}).capture(turn);
+        const result=await record.process.call('hook',name,value,this.context(record,turn),this.service(record,turn,controller.signal,true),{signal:controller.signal,timeoutMs});
+        const policyAllowed=this.active(record,turn.conversationKey,'reply_policy')&&turn.conversationKey.startsWith('wechat:group:')&&turn.engagement?.mode==='social'&&turn.engagement?.verified===true&&turn.engagement?.direct===false;
+        if(result?.suppressReply&&!policyAllowed)delete result.suppressReply;
+        if(name==='after-response'&&result?.text!==undefined&&!this.active(record,turn.conversationKey,'reply')&&!(policyAllowed&&result.text==='SILENT'))delete result.text;
         if(name==='after-response'&&result&&record.permissions.includes('voice')&&this.active(record,turn.conversationKey,'voice')){
           const request=result.voiceReplacement??result.voiceRequest,cooldownKey=record.id+'|'+turn.conversationKey;
           if(request&&(!result.voiceReplacement||(this.voiceCooldown?.get(cooldownKey)??0)<=this.now())){turn.voiceRequests??=[];if(turn.voiceRequests.length<3){try{const normalized=voiceRequest(request);turn.voiceRequests.push({id:record.id,generation:record.generation,request:normalized,fallbackText:result.voiceReplacement?normalized.text:undefined,replacement:!!result.voiceReplacement,cooldownKey,cooldownMs:Math.max(10,Math.min(3600,Number(this.policy().config.plugins[record.id]?.settings?.randomVoiceCooldownSeconds)||90))*1000});}catch(error){this.log(`[plugin:${record.id}] invalid voice request: ${error.message}`);}}}
@@ -250,7 +263,7 @@ export class PluginRuntime{
     }finally{this.ticking=false;}
   }
   start(){if(!this.closed&&!this.timer){this.timer=setInterval(()=>{void this.tick().catch(error=>this.log('plugin scheduler: '+error.message));},60000);this.timer.unref?.();}}
-  async dispose(){this.closed=true;clearInterval(this.timer);this.watcher?.close();await Promise.allSettled([...this.records.values()].map(record=>record.process?.dispose()));await this.syncing?.catch(()=>{});this.records.clear();}
+  async dispose(){await this.archiveIndex?.close();this.closed=true;clearInterval(this.timer);this.watcher?.close();await Promise.allSettled([...this.records.values()].map(record=>record.process?.dispose()));await this.syncing?.catch(()=>{});this.records.clear();}
 }
 
 export function bindAgentTools(agentCtx,runtime,key,turnFor){

@@ -8,7 +8,7 @@ export function stickerCandidateLimit(value=STICKER_CANDIDATE_LIMIT){
 export function validateStickerSettings(settings) {
   if(settings===undefined)return;
   if(!settings||typeof settings!=='object'||Array.isArray(settings))throw Error('Invalid sticker settings');
-  for(const key of ['enabled','labelCache','collectGroups','shareGroups','collectEnabled','shareEnabled'])if(settings[key]!==undefined&&typeof settings[key]!=='boolean')throw Error('Invalid sticker '+key);
+  for(const key of ['enabled','labelCache','collectGroups','shareGroups','collectEnabled','collectDshEnabled','shareEnabled'])if(settings[key]!==undefined&&typeof settings[key]!=='boolean')throw Error('Invalid sticker '+key);
   if(settings.candidateLimit!==undefined)stickerCandidateLimit(settings.candidateLimit);
   if(settings.chats!==undefined){
     if(!settings.chats||typeof settings.chats!=='object'||Array.isArray(settings.chats))throw Error('Invalid sticker chats');

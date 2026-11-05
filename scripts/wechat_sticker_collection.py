@@ -41,6 +41,8 @@ class StickerCollection:
                 if not HEX.fullmatch(digest) or not isinstance(fields,dict) or not valid_md5(item.get('sourceMd5')) or not valid_md5(fields.get('md5')):raise RuntimeError('STICKER_COLLECTION_INDEX_INVALID')
                 if any(type(fields.get(name)) is not int or not 0<fields[name]<=maximum for name,maximum in [('len',MAX_FILE),('width',4096),('height',4096)]):raise RuntimeError('STICKER_COLLECTION_INDEX_INVALID')
                 if 'sourceMd5s' in item and (not isinstance(item['sourceMd5s'],list) or len(item['sourceMd5s'])>8 or any(not valid_md5(md5) for md5 in item['sourceMd5s'])):raise RuntimeError('STICKER_COLLECTION_INDEX_INVALID')
+                if 'collectionOrigins' in item and (not isinstance(item['collectionOrigins'],list) or not 1<=len(item['collectionOrigins'])<=3 or any(origin not in ('wechat','dsh','legacy') for origin in item['collectionOrigins'])):raise RuntimeError('STICKER_COLLECTION_INDEX_INVALID')
+                if 'dshSources' in item and (not isinstance(item['dshSources'],list) or len(item['dshSources'])>100 or any(not isinstance(key,str) or not CHAT.fullmatch(key) for key in item['dshSources'])):raise RuntimeError('STICKER_COLLECTION_INDEX_INVALID')
                 if type(item.get('receivedAt')) is not int or not isinstance(item.get('sources'),dict) or len(item['sources'])>100 or any(not CHAT.fullmatch(key) or type(at) is not int for key,at in item['sources'].items()):raise RuntimeError('STICKER_COLLECTION_INDEX_INVALID')
         for image_id,item in state['pending'].items():
             if not HEX.fullmatch(image_id) or not isinstance(item,dict) or not CHAT.fullmatch(str(item.get('key',''))) or not isinstance(item.get('descriptor'),dict) or item['descriptor'].get('localType')!=47:raise RuntimeError('STICKER_COLLECTION_INDEX_INVALID')
@@ -73,6 +75,14 @@ class StickerCollection:
     def enabled(self,policy=None):
         settings=(policy or self.policy()).get('stickers',{})
         return settings.get('collectEnabled',settings.get('collectGroups',True)) is True
+    def dsh_enabled(self,policy=None):
+        return (policy if policy is not None else self.policy()).get('stickers',{}).get('collectDshEnabled',True) is True
+    def can_review(self,item,policy):
+        from wechat_meme_library import meme_import_allowed
+        origins=item.get('collectionOrigins',['legacy'])
+        wechat=self.enabled(policy) and any(origin in origins for origin in ('wechat','legacy'))
+        dsh=self.dsh_enabled(policy) and 'dsh' in origins and any(meme_import_allowed(policy,key) for key in item.get('dshSources',[]))
+        return self.usable(item,policy) and (wechat or dsh)
     def allowed(self,key,policy=None):
         match=CHAT.fullmatch(key) if isinstance(key,str) else None
         if not match or int(match[2])>9007199254740991:return False
@@ -106,7 +116,7 @@ class StickerCollection:
 
     def store(self,raw,fields,source_md5,key,received_at,image_id,external=False):
         from wechat_meme_library import meme_import_allowed
-        can_store=lambda:self.active() and meme_import_allowed(self.policy(),key) if external else self.can_collect(key)
+        can_store=lambda:self.active() and self.dsh_enabled() and meme_import_allowed(self.policy(),key) if external else self.can_collect(key)
         if not can_store():return False
         if not isinstance(raw,bytes) or not 0<len(raw)<=MAX_FILE or not raw.startswith((b'GIF87a',b'GIF89a')) or not valid_md5(source_md5):raise RuntimeError('STICKER_COLLECTION_RESOURCE_INVALID')
         with Image.open(io.BytesIO(raw)) as image:
@@ -120,6 +130,8 @@ class StickerCollection:
             if where=='waiting' and digest not in state['waiting'] and len(state['waiting'])>=MAX_WAITING:return False
             old=state['entries'].get(digest,state['waiting'].get(digest,state['archive'].get(digest,{})))
             item={**{name:old[name] for name in ('manual','name','manualLabel') if name in old},'fields':fields,'sourceMd5':old.get('sourceMd5',source_md5),'sourceMd5s':list(dict.fromkeys([source_md5,*old.get('sourceMd5s',[old.get('sourceMd5',source_md5)])]))[:8],
+                  'collectionOrigins':list(dict.fromkeys([*old.get('collectionOrigins',['legacy'] if old else []),'dsh' if external else 'wechat'])),
+                  'dshSources':list(dict.fromkeys(([key] if external else [])+old.get('dshSources',[])))[:100],
                   'receivedAt':max(int(received_at),old.get('receivedAt',0)),'sources':dict(sorted({**old.get('sources',{}),key:int(received_at)}.items(),key=lambda pair:pair[1],reverse=True)[:100]),'animated':animated}
             if not can_store():return False
             self.safe(self.folder).mkdir(parents=True,exist_ok=True);file=self.safe(self.folder/(digest+'.gif'))
@@ -186,7 +198,7 @@ class StickerCollection:
                     'review':('reviewing' if review else 'waiting' if state['waiting'] or state['archive'] else 'idle'),'lastReview':state.get('lastReview'),'nextReviewAt':state.get('nextReviewAt',0)}
 
     def claim_review(self):
-        if not self.active() or not self.enabled():return None
+        if not self.active():return None
         with self.lock:
             state=self.read();now=int(time.time());policy=self.policy()
             if state.get('review') and now-state['review']['startedAt']<150:return None
@@ -194,8 +206,8 @@ class StickerCollection:
             # Permission removal releases usable-pool capacity without exposing revoked images.
             for digest,item in list(state['entries'].items()):
                 if not self.usable(item,policy):state['archive'][digest]=state['entries'].pop(digest)
-            chosen=[digest for digest,item in state['waiting'].items() if self.usable(item,policy)][:MAX_WAITING]
-            if not chosen:chosen=[digest for digest,item in state['archive'].items() if self.usable(item,policy)][:MAX_WAITING]
+            chosen=[digest for digest,item in state['waiting'].items() if self.can_review(item,policy)][:MAX_WAITING]
+            if not chosen:chosen=[digest for digest,item in state['archive'].items() if self.can_review(item,policy)][:MAX_WAITING]
             if not chosen:self.write(state);return None
             review={'ticket':uuid.uuid4().hex+uuid.uuid4().hex,'revision':self.revision(state),'candidates':chosen,'startedAt':now}
             state['review']=review;state['nextReviewAt']=now+60;self.write(state);return review
@@ -203,13 +215,14 @@ class StickerCollection:
     def review_packet(self,ticket,label_for=lambda item:None,usage=None):
         with self.lock:
             state=self.read();review=state.get('review');policy=self.policy()
-            if not self.active() or not self.enabled() or not review or review['ticket']!=ticket or review['revision']!=self.revision(state):raise PermissionError('Sticker review expired')
+            if not self.active() or not review or review['ticket']!=ticket or review['revision']!=self.revision(state):raise PermissionError('Sticker review expired')
             rows=[(digest,item,False) for digest,item in state['entries'].items()]
             for digest in review['candidates']:
                 item=state['waiting'].get(digest,state['archive'].get(digest))
                 if not item:raise PermissionError('Sticker review expired')
                 rows.append((digest,item,True))
             if any(not self.usable(item,policy) for _,item,_ in rows):raise PermissionError('Sticker review source revoked')
+            if any(new and not self.can_review(item,policy) for _,item,new in rows):raise PermissionError('Sticker review collection disabled')
             canvas=Image.new('RGB',(8*144,((len(rows)+7)//8)*144),'white');draw=ImageDraw.Draw(canvas);metadata=[]
             for index,(digest,item,new) in enumerate(rows):
                 raw=self.verified_bytes(digest,item)
@@ -227,11 +240,12 @@ class StickerCollection:
     def apply_review(self,ticket,keep,reason=''):
         with self.lock:
             state=self.read();review=state.get('review');policy=self.policy()
-            if not self.active() or not self.enabled() or not review or review['ticket']!=ticket or review['revision']!=self.revision(state):raise PermissionError('Sticker review expired')
+            if not self.active() or not review or review['ticket']!=ticket or review['revision']!=self.revision(state):raise PermissionError('Sticker review expired')
             mapping={'P'+str(i+1):digest for i,digest in enumerate(state['entries'])}
             mapping.update({'N'+str(i+1):digest for i,digest in enumerate(review['candidates'])})
             if not isinstance(keep,list) or len(keep)!=min(MAX_ENTRIES,len(mapping)) or any(not isinstance(slot,str) or slot not in mapping for slot in keep) or len(set(keep))!=len(keep):raise ValueError('Invalid sticker selection')
             items={**state['entries'],**state['waiting'],**state['archive']}
+            if any(not self.can_review(items[digest],policy) for digest in review['candidates']):raise PermissionError('Sticker review collection disabled')
             if any(not self.usable(items[mapping[slot]],policy) for slot in keep):raise PermissionError('Sticker review source revoked')
             selected={mapping[slot]:items[mapping[slot]] for slot in keep};replaced=set(state['entries'])-set(selected)
             considered=set(review['candidates']);new=set(selected)-set(state['entries'])

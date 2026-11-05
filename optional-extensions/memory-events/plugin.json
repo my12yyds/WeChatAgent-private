@@ -1,0 +1,48 @@
+{
+  "id": "memory-events",
+  "name": "事件与约定",
+  "version": "1.2.1",
+  "apiVersion": 2,
+  "host": "wechatagent",
+  "author": "my12yyds",
+  "description": "把本人明确说出的计划与约定记成独立事件，保存参与人、时间、计划中/已完成/已取消状态。参与人使用真实身份核验，同名不合并；未知日期不猜测，完成与取消也需要本人明确说明。仅当前授权人物和聊天可查，不会自动发提醒。",
+  "permissions": [
+    "people_memory",
+    "storage"
+  ],
+  "requiresAccount": true,
+  "settings": {
+    "autoRemember": false,
+    "maxEvents": 64,
+    "plannedRetentionDays": 30,
+    "closedRetentionDays": 7
+  },
+  "configSchema": {
+    "autoRemember": {
+      "type": "boolean",
+      "title": "同时记录本人明确事实（默认关闭）",
+      "description": "默认关闭。开启后额外把本人明确事实交给人物记忆服务记录，需要人物记忆权限；事件记录工具本身不依赖此开关。不会把转述或引用当成本人事实。"
+    },
+    "maxEvents": {
+      "type": "integer",
+      "title": "每位人物在当前聊天的事件容量",
+      "minimum": 8,
+      "maximum": 128,
+      "description": "每位人物在当前聊天最多保存的事件数。达到容量时会拒绝新增，不自动覆盖未完成约定；可先完成、取消或调整容量。"
+    },
+    "plannedRetentionDays": {
+      "type": "integer",
+      "title": "计划中事件保留天数（新记录）",
+      "minimum": 1,
+      "maximum": 365,
+      "description": "新建计划从记录时间开始的保留天数，默认30天。到期后列表不再显示；修改不批量改写旧记录，也不是自动提醒时间。"
+    },
+    "closedRetentionDays": {
+      "type": "integer",
+      "title": "完成或取消后保留天数",
+      "minimum": 1,
+      "maximum": 365,
+      "description": "明确完成或取消后重新计算保留天数，默认7天。用于保留近期结果，和计划中的保留期限分开。"
+    }
+  }
+}

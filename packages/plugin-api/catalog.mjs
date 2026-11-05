@@ -127,7 +127,7 @@ export function pluginCatalog(root,runtime=[]){
     return {id:item.id,name:item.name,description:item.description??'',version:item.version,apiVersion:2,host:'wechatagent',management:'wechatagent',author:item.author??'',homepage:item.homepage,
       revision:item.revision,invalid:!!item.invalid,enabled,permissions:setting.permissions??[],requestedPermissions:item.permissions,requiresHostFeatures:item.requiresHostFeatures??[],chats:setting.chats??[],
       configSchema:item.configSchema,settings:publicSettings(item,{...item.settings,...setting.settings}),actions:state?.actions??[],loaded:state?.loaded===true,active:state?.active===true,
-      reason:item.invalid?item.reason:!enabled?'已安装，尚未启用':state?.reason??'设置已保存，等待加载新版 DSH 桥接',statusLabel:item.invalid?'清单无效':!enabled?'已关闭':state?.active?'已开启':'待生效',statusTone:item.invalid?'error':!enabled?'muted':state?.active?'ok':'warning'};
+      reason:item.invalid?item.reason:!enabled?'已安装，尚未启用':(state?.reason==='PLUGIN_HOST_CONTRACT_CHANGED'?'DSH 内存中的宿主接口与磁盘不同，请从托盘完整退出并重开 DSH。':state?.reason)??'设置已保存，等待加载新版 DSH 桥接',statusLabel:item.invalid?'清单无效':!enabled?'已关闭':state?.active?'已开启':'待生效',statusTone:item.invalid?'error':!enabled?'muted':state?.active?'ok':'warning'};
   })};
 }
 export function pluginEnabled(root,id,key){

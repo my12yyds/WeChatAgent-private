@@ -28,6 +28,8 @@ build/
 
 # Personal personas and installed plugin state
 plugins/
+!docs/plugins/
+!docs/plugins/**
 roles/*.md
 !roles/示例助手.md
 *.zip

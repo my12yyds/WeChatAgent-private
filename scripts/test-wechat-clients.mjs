@@ -14,7 +14,10 @@ test('only the complete signed matching client selects the bundled sender',()=>{
  assert.equal(clientCatalog({nativeReady:false,clients:[verified]}).bundled.canLaunch,false);
 });
 test('an experimental newer profile cannot enable the old injector and missing clients remain explicit',()=>{
- const data=clientCatalog({nativeReady:true,clients:[{...verified,version:'4.1.15.13',coreVersion:'4.1.15.13'}]});assert.equal(data.bundled.canLaunch,false);assert.equal(data.bundled.tool,null);
+ for(const version of ['4.1.15.13','4.1.15.56']){
+  const data=clientCatalog({nativeReady:true,clients:[{...verified,version,coreVersion:version}]});assert.equal(data.bundled.canLaunch,false);assert.equal(data.bundled.tool,null);
+  assert.match(data.bundled.status,version==='4.1.15.13'?/基础文字.*语音、表情等尚未适配/:/不能套用上游 4\.1\.15\.13/);
+ }
  assert.equal(clientCatalog({clients:[]}).bundled,null);
 });
 test('detection coalesces concurrent scans, caches results and permits an explicit refresh',async()=>{

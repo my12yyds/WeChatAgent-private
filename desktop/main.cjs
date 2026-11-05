@@ -102,7 +102,7 @@ else {
     consoleApp = createConsole({ root, port: 0, nodeExecutable: runtimeNode, officialLogin:officialMusicLogin,
       onQuit: () => app.quit(),
       filePicker: async kind => {
-        const result = await dialog.showOpenDialog(window, { title: kind === 'workspace' ? '选择工作区目录' : kind === 'folder' ? '选择微信数据库目录' : '选择程序', properties: ['folder','workspace'].includes(kind) ? ['openDirectory'] : ['openFile'], ...(kind === 'exe' ? { filters: [{ name: '程序', extensions: ['exe'] }] } : {}) });
+        const result = await dialog.showOpenDialog(window, { title: kind === 'zip' ? '选择 WeChatGirl 语音组件 ZIP 包' : kind === 'workspace' ? '选择工作区目录' : kind === 'folder' ? '选择微信数据库目录' : '选择程序', properties: ['folder','workspace'].includes(kind) ? ['openDirectory'] : ['openFile'], ...(kind === 'zip' ? { filters: [{ name: '语音组件包', extensions: ['zip'] }] } : kind === 'exe' ? { filters: [{ name: '程序', extensions: ['exe'] }] } : {}) });
         return result.canceled ? '' : result.filePaths[0];
       },
     });
@@ -131,6 +131,7 @@ else {
     });
     ipcMain.on('desktop:unsaved-answer',(event,id,value)=>{if(trusted(event)&&quitCheck?.id===id&&typeof value==='boolean')quitCheck.answer(value);});
     ipcMain.on('desktop:initial', event => { event.returnValue = event.sender === window.webContents ? { theme: preferences.theme ?? theme, appearance:appearanceStore.read(preferences.appearance), colors:preferences.colors } : {}; });
+    ipcMain.handle('desktop:voice-model-select',async event=>{if(!trusted(event))throw Error('不允许此窗口选择模型。');const result=await dialog.showOpenDialog(window,{title:'选择 Breeze TTS 2 兼容的本地 GGUF 模型',properties:['openFile'],filters:[{name:'GGUF 模型',extensions:['gguf']}]});return result.canceled?null:result.filePaths[0]??null;});
     ipcMain.handle('desktop:appearance-choose', async event => {
       if (!trusted(event)) throw new Error('不允许此窗口修改背景。');
       const result = await dialog.showOpenDialog(window,{title:'选择背景图片',properties:['openFile'],filters:[{name:'图片',extensions:['png','jpg','jpeg']}]});

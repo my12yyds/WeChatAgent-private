@@ -1,0 +1,45 @@
+import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';import os from 'node:os';import path from 'node:path';import crypto from 'node:crypto';
+import {PeopleMemory} from '../packages/plugin-api/people-memory.mjs';import {filterMemoryOverrides,continuityContext} from '../packages/dsh-social-bridge-plugin/continuity-memory.mjs';import {HistoryStore} from '../packages/dsh-social-bridge-plugin/history-store.mjs';import {memoryEvaluationPrompt,MEMORY_CASES,scoreMemoryAnswer} from '../packages/dsh-social-bridge-plugin/memory-evaluation.mjs';
+import {createPeopleConsole} from './people-console.mjs';import {createMemoryEvaluation} from './memory-evaluation-console.mjs';import {createConsole} from './console-server.mjs';
+const account='a'.repeat(64),key='wechat:private:1',hash=s=>crypto.createHash('sha256').update(s).digest('hex');
+const turn=(text)=>({conversationKey:key,peopleObservations:[{senderId:'wxid_alice',name:'小桃',text,at:Date.now(),evidenceId:hash(text)}]});
+function fixture(t){const root=fs.mkdtempSync(path.join(os.tmpdir(),'memory-workbench-'));fs.mkdirSync(path.join(root,'state/weflow'),{recursive:true});fs.writeFileSync(path.join(root,'state/weflow/active-account.json'),JSON.stringify({id:account}));fs.mkdirSync(path.join(root,'config'));const config=JSON.parse(fs.readFileSync(new URL('../config/wechatagent.example.json',import.meta.url),'utf8'));config.wechat.whitelist={private:['1'],groups:[]};fs.writeFileSync(path.join(root,'config/wechatagent.json'),JSON.stringify(config));fs.writeFileSync(path.join(root,'config/plugins.json'),JSON.stringify({version:1,plugins:{'people-memory':{enabled:true,permissions:['people_memory'],chats:[key],settings:{}}}}));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));const memory=new PeopleMemory({root,accountScope:hash(account),accountId:account});memory.capture(turn('跨聊天都记住，我的猫叫奶糖'));return {root,memory,config,note:()=>memory.managementCatalog().people[0].notes[0]};}
+
+test('owner corrections retain versions, revoke sharing, check revisions and suppress stale archive evidence',t=>{
+ const f=fixture(t),old=f.note();f.memory.manage({id:old.id,revision:old.revision,action:'edit',text:'我的猫叫团子'});const next=f.note();assert.equal(next.version,2);assert.equal(next.visibility,'chat');assert.equal(next.history[0].text,'我的猫叫奶糖');assert.throws(()=>f.memory.manage({id:old.id,revision:old.revision,action:'pin'}),/REVISION/);assert.equal(f.memory.recall(turn('我的猫叫什么'))[0].notes[0].text,'我的猫叫团子');
+ const overrides=f.memory.overrides(turn('我的猫叫什么')),person=hash('wxid_alice');assert(filterMemoryOverrides([{personId:person,text:'我的猫叫奶糖'}],overrides)[0].memoryRedacted);assert.equal(filterMemoryOverrides([{personId:hash('someone-else'),text:'我的猫叫奶糖'}],overrides)[0].text,'我的猫叫奶糖');
+ const store=new HistoryStore(f.root,account);try{store.append(key,{id:'1',sender_id:'1',sender_wxid:'wxid_alice',sender_name:'小桃',timestamp:Date.now()/1000,text:'我的猫叫奶糖'});const context=continuityContext(store,key,{summaryChars:3200},{overrides,observations:turn('你记得吗').peopleObservations,accountId:account});assert(context.includes('团子'));assert(!context.includes('奶糖'));}finally{store.close();}
+});
+
+test('pin, forget, restore and source revocation preserve tombstones; locks fail safely and recover dead owners',t=>{
+ const f=fixture(t);let n=f.note();f.memory.manage({id:n.id,revision:n.revision,action:'pin'});assert(f.note().pinned);n=f.note();f.memory.manage({id:n.id,revision:n.revision,action:'forget'});assert.equal(f.note().status,'forgotten');f.memory.capture(turn('跨聊天都记住，我的猫叫奶糖'));assert.equal(f.note().status,'forgotten');n=f.note();f.memory.manage({id:n.id,revision:n.revision,action:'restore'});assert.equal(f.note().status,'active');
+ const lock=f.memory.file()+'.lock';fs.writeFileSync(lock,String(process.pid));assert.throws(()=>f.memory.capture(turn('我喜欢音乐')),/BUSY/);fs.writeFileSync(lock,'999999999');f.memory.capture(turn('我喜欢音乐'));assert(!fs.existsSync(lock));
+});
+
+test('management API rejects stale accounts, unauthorized origins and invalid actions; diagnostics only project safe metadata',async t=>{
+ const f=fixture(t),api=createPeopleConsole({root:f.root,configFor:()=>f.config,plugin:async route=>route==='/health'?{ok:true,projectRoot:f.root,memoryContinuity:'layered-archive-v1',memoryWorkbench:'fact-management-v1',pluginHostFeatures:['people-memory-config-v1'],secret:'private-token'}:{sessions:[{conversationKey:key,memoryDiagnostics:{at:123,recentRecords:40,recentChars:8000,personNotes:2,rawText:'never return'}}]}});assert.equal(api.snapshot().stats.notes,1);assert.throws(()=>api.change({scope:'b'.repeat(64),id:f.note().id,revision:f.note().revision,action:'pin'}),/账号/);const d=await api.diagnostics();assert(d.dsh.loadedCurrentKernel);assert(!JSON.stringify(d).includes('private-token'));assert(!JSON.stringify(d).includes('never return'));f.config.wechat.whitelist.private=[];assert.throws(()=>api.change({scope:account,id:f.note().id,revision:f.note().revision,action:'pin'}),/范围/);
+});
+
+test('real HTTP endpoints enforce the console token and expose the management route',async t=>{
+ const f=fixture(t),app=createConsole({root:f.root,port:0,fetchImpl:async()=>{throw Error('no real network');}});await app.start();t.after(()=>app.close());const base='http://127.0.0.1:'+app.server.address().port,info=await(await fetch(base+'/api/info')).json();assert.equal((await fetch(base+'/api/memory/people')).status,401);const headers={'x-console-token':info.token,'Content-Type':'application/json'};const data=await(await fetch(base+'/api/memory/people',{headers})).json();assert.equal(data.people.length,1);const n=data.people[0].notes[0];assert.equal((await fetch(base+'/api/memory/people',{method:'POST',headers,body:JSON.stringify({scope:account,id:n.id,revision:n.revision,action:'pin'})})).status,200);
+});
+
+test('100/500-message synthetic probes use actual memory projections and score strictly',()=>{
+ for(const turns of [100,500])for(const spec of MEMORY_CASES){const data=memoryEvaluationPrompt(spec.id,turns);assert(data.prompt.length<32000);assert.equal(data.turns,turns);assert(scoreMemoryAnswer(spec,JSON.stringify({[spec.field]:spec.expected})).passed);assert(!scoreMemoryAnswer(spec,'这是一个猜测').passed);if(['privacy','denied-sharing'].includes(spec.id))assert(!data.prompt.includes('奶糖'));}
+ assert.throws(()=>memoryEvaluationPrompt('arbitrary',500));assert.throws(()=>memoryEvaluationPrompt('recall',999999));
+});
+
+test('evaluation requires explicit allowance, performs five fake probes, and cancels without real sends',async t=>{
+ const f=fixture(t);let calls=0;const api=createMemoryEvaluation({root:f.root,configFor:()=>f.config,plugin:async(route,body)=>{if(route==='/health')return {memoryEvaluation:'synthetic-probe-v1',memoryEvaluationTransport:'authenticated-rpc-v2'};calls++;const spec=MEMORY_CASES.find(s=>s.id===body.scenario);return {model:{provider:'fake',model:'test'},text:JSON.stringify({[spec.field]:spec.expected})};}});assert.throws(()=>api.start({scope:account,conversationKey:key,turns:100,confirmed:false}),/确认/);api.start({scope:account,conversationKey:key,turns:100,confirmed:true});for(let i=0;i<30&&api.snapshot().state==='running';i++)await new Promise(resolve=>setImmediate(resolve));assert.equal(api.snapshot().state,'completed');assert.equal(calls,5);assert(api.snapshot().results.every(row=>row.passed));
+ const slow=createMemoryEvaluation({root:f.root,configFor:()=>f.config,plugin:async(route,body,{signal}={})=>{if(route==='/health')return {memoryEvaluation:'synthetic-probe-v1',memoryEvaluationTransport:'authenticated-rpc-v2'};return new Promise((resolve,reject)=>signal.addEventListener('abort',()=>reject(Error('cancelled')),{once:true}));}});const job=slow.start({scope:account,conversationKey:key,turns:500,confirmed:true});slow.cancel({scope:account,id:job.id});await new Promise(resolve=>setImmediate(resolve));assert.equal(slow.snapshot().state,'cancelled');
+ const restarted=createMemoryEvaluation({root:f.root,configFor:()=>f.config,plugin:async()=>{throw Error('must not auto retry');}});assert.equal(restarted.snapshot().state,'cancelled');assert.equal(restarted.snapshot().id,job.id);
+});
+
+test('diagnostics require configurable plugin support and the matching workspace before reporting ready',async t=>{
+ const f=fixture(t);let health={ok:true,projectRoot:f.root,memoryContinuity:'layered-archive-v1',memoryWorkbench:'fact-management-v1'};
+ const api=createPeopleConsole({root:f.root,configFor:()=>f.config,plugin:async route=>route==='/health'?health:{sessions:[]}});
+ let d=await api.diagnostics();assert(!d.dsh.loadedCurrentKernel);assert(!d.dsh.configurablePlugin);assert.match(d.message,/可配置/);
+ health.pluginHostFeatures=['people-memory-config-v1'];assert((await api.diagnostics()).dsh.loadedCurrentKernel);
+ health.projectRoot=path.join(f.root,'another-workspace');d=await api.diagnostics();assert(!d.dsh.loadedCurrentKernel);assert.match(d.message,/目录/);
+ delete health.projectRoot;assert(!(await api.diagnostics()).dsh.loadedCurrentKernel);
+});

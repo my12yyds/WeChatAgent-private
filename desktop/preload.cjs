@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld('desktop', {
   initialAppearance: initial.appearance,
   initialColors: initial.colors,
   setColors: colors => ipcRenderer.invoke('desktop:colors', colors),
+  chooseVoiceModel: () => ipcRenderer.invoke('desktop:voice-model-select'),
   chooseBackground: () => ipcRenderer.invoke('desktop:appearance-choose'),
   setBackgroundStrength: strength => ipcRenderer.invoke('desktop:appearance-strength', strength),
   resetBackground: () => ipcRenderer.invoke('desktop:appearance-reset'),

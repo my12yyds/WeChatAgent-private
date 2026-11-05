@@ -17,6 +17,7 @@ function runtimeModules(folder,prefix='packages/plugin-api'){
 export async function auditPluginHost(root,{compareRoot,requireZips=true}={}){
   root=path.resolve(root);const findings=[],packages=[];
   const problem=(file,code)=>findings.push({file,code});
+  let core=false;try{core=JSON.parse(fs.readFileSync(path.join(root,'deployment.json'),'utf8')).pluginDistribution==='core';}catch{}
   const read=relative=>fs.readFileSync(path.join(root,relative));
   let contract,catalog,bundled,uiCatalog;
   try{
@@ -63,6 +64,7 @@ export async function auditPluginHost(root,{compareRoot,requireZips=true}={}){
   ];
   for(const[file,marker]of voiceWiring)if(!fs.existsSync(path.join(root,file))||!read(file).toString('utf8').includes(marker))problem(file,'VOICE_INPUT_WIRING_INCOMPLETE');
   for(const bundle of bundled.BUNDLED_PLUGINS){
+    if(core&&bundle.zip&&!bundle.essential){if(fs.existsSync(path.join(root,bundle.source,'plugin.json'))||fs.existsSync(path.join(root,bundle.zip)))problem(bundle.source,'PLUGIN_OPTIONAL_PRESENT_IN_CORE');continue;}
     try{
       const source=path.join(root,bundle.source),item=catalog.inspectPackage(source);
       if(item.id!==bundle.id||item.version!==bundle.version)throw Error('PLUGIN_BUNDLE_IDENTITY_MISMATCH');

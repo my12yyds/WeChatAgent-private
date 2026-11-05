@@ -1,3 +1,4 @@
+import {songPlayback} from './segments.mjs';
 import {createNeteaseClient} from '../netease/client.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -55,11 +56,11 @@ export async function findSong(title,artist='',{fetcher=fetch,signal,neteaseClie
 function verifiedPrepared(folder,sourceId){
   try{const file=path.join(folder,'song.json');if(fs.lstatSync(folder).isSymbolicLink()||fs.lstatSync(file).isSymbolicLink()||fs.statSync(file).size>65536)return null;
     const meta=json(file);if(meta.version!==1||meta.provider!=='netease-public'||sourceId&&meta.sourceId!==sourceId)return null;
-    for(const name of ['vocals.wav','instrumental.wav']){const stem=path.join(folder,name);if(fs.lstatSync(stem).isSymbolicLink()||fs.statSync(stem).size>30*1024*1024||digest(fs.readFileSync(stem))!==meta.hashes?.[name])return null;}
+    for(const name of ['vocals.wav','instrumental.wav']){const stem=path.join(folder,name);if(fs.lstatSync(stem).isSymbolicLink()||fs.statSync(stem).size>140*1024*1024||digest(fs.readFileSync(stem))!==meta.hashes?.[name])return null;}
     return {...meta,folder};
   }catch{return null;}
 }
-export function runMusicTool(executable,args,{cwd,signal,timeoutMs=480000}={}){
+export function runMusicTool(executable,args,{cwd,signal,timeoutMs=480000,onProgress=()=>{}}={}){
   return new Promise((resolve,reject)=>{
     const controller=new AbortController(),combined=AbortSignal.any([controller.signal,...(signal?[signal]:[])]);
     if(combined.aborted){reject(voiceError('VOICE_CANCELLED'));return;}
@@ -70,39 +71,41 @@ export function runMusicTool(executable,args,{cwd,signal,timeoutMs=480000}={}){
       else child.kill();
     };
     combined.addEventListener('abort',abort,{once:true});
-    let text='',error='';const timer=setTimeout(()=>controller.abort(),timeoutMs);timer.unref?.();
-    child.stdout.on('data',part=>{text=(text+part).slice(-12000);});child.stderr.on('data',part=>{error=(error+part).slice(-12000);});
+    let text='',error='',progressText='';const timer=setTimeout(()=>controller.abort(),timeoutMs);timer.unref?.();
+    child.stdout.on('data',part=>{text=(text+part).slice(-12000);progressText+=part.toString();const lines=progressText.split('\n');progressText=lines.pop().slice(-200);for(const line of lines){const match=/^MUSIC_PROGRESS:separate:(\d+):(\d+)\s*$/.exec(line);if(match&&Number(match[1])<=Number(match[2])&&Number(match[2])<=60)onProgress('separate',{part:Number(match[1]),parts:Number(match[2])});}});child.stderr.on('data',part=>{error=(error+part).slice(-12000);});
     child.on('error',()=>{clearTimeout(timer);combined.removeEventListener('abort',abort);reject(voiceError(combined.aborted?'VOICE_CANCELLED':'SONG_TOOL_START_FAILED'));});
-    child.on('close',code=>{clearTimeout(timer);combined.removeEventListener('abort',abort);if(combined.aborted)reject(voiceError('VOICE_CANCELLED'));else if(code!==0)reject(voiceError('SONG_PREPARATION_FAILED'));else resolve(text);});
+    child.on('close',code=>{clearTimeout(timer);combined.removeEventListener('abort',abort);if(combined.aborted)reject(voiceError('VOICE_CANCELLED'));else if(code!==0){const typed=/WECHATGIRL_MUSIC_ERROR:(SONG_SEPARATOR_MEMORY_PRESSURE|SONG_SEPARATOR_FAILED|SONG_STEM_MISSING|SONG_STEMS_INVALID|SONG_SEPARATOR_INPUT_INVALID)/.exec(error);reject(voiceError(typed?.[1]??'SONG_PREPARATION_FAILED'));}else resolve(text);});
   });
 }
 export async function prepareSong(root,request,{fetcher=fetch,signal,find=findSong,findById=songById,run=runMusicTool,onProgress=()=>{}}={}){
   const link=request.sourceUrl?mediaLink('netease',request.sourceUrl):null;if(link&&link.kind!=='song')throw voiceError('VOICE_SONG_LINK_INVALID');
-  const key=digest(link?'netease-id:'+link.id:songName(request.title)+'\0'+songName(request.artist)),folder=directory(root,'state/voice/music-cache/'+key),metaFile=path.join(folder,'song.json');
+  const playback=songPlayback(request.playbackMode);
+  const key=digest(playback.mode+':v2:'+(link?'netease-id:'+link.id:songName(request.title)+'\0'+songName(request.artist))),folder=directory(root,'state/voice/music-cache/'+key),metaFile=path.join(folder,'song.json');
   const prepared=verifiedPrepared(folder,link?.id);if(prepared)return prepared;
   // Reuse only locally retained public stems with exact platform ID and hashes.
-  if(link){const base=directory(root,'state/voice/music-cache');for(const name of fs.readdirSync(base).filter(name=>/^[a-f0-9]{64}$/.test(name)).slice(0,128)){const old=verifiedPrepared(path.join(base,name),link.id);if(old)return old;}}
+  if(link){const base=directory(root,'state/voice/music-cache');for(const name of fs.readdirSync(base).filter(name=>/^[a-f0-9]{64}$/.test(name)).slice(0,128)){const old=verifiedPrepared(path.join(base,name),link.id);if(old&&old.playbackMode===playback.mode)return old;}}
   onProgress('source');const neteaseClient=createNeteaseClient(root,{fetcher:fetcher===fetch?undefined:fetcher});const track=link?await findById(link.id,{fetcher,signal,neteaseClient}):await find(request.title,request.artist??'',{fetcher,signal,neteaseClient});
   if(link&&track.id!==link.id)throw voiceError('SONG_EXACT_MATCH_NOT_FOUND');
-  onProgress('download');const audio=await musicFetch(track.url,{fetcher,signal,media:true,maxBytes:30*1024*1024});
+  if(playback.mode==='full'&&(!Number.isFinite(track.durationSeconds)||track.durationSeconds<=0||track.durationSeconds>playback.maxSeconds))throw voiceError('SONG_FULL_DURATION_UNSUPPORTED');
+  onProgress('download');const audio=await musicFetch(track.url,{fetcher,signal,media:true,maxBytes:140*1024*1024});
   const source=path.join(folder,'source.audio');fs.writeFileSync(source,audio,{mode:0o600});
-  const startSeconds=track.durationSeconds>120?30:0,clip=path.join(folder,'clip.wav');
-  await run(path.join(root,'state/voice/tools/ffmpeg.exe'),['-hide_banner','-loglevel','error','-nostdin','-y','-ss',String(startSeconds),'-i',source,'-t','55','-ar','44100','-ac','2',clip],{signal,timeoutMs:60000});
+  const startSeconds=playback.mode==='full'?0:track.durationSeconds>120?30:0,clip=path.join(folder,'clip.wav');
+  await run(path.join(root,'state/voice/tools/ffmpeg.exe'),['-hide_banner','-loglevel','error','-nostdin','-y','-ss',String(startSeconds),'-i',source,'-t',String(playback.maxSeconds),'-ar','44100','-ac','2',clip],{signal,timeoutMs:60000});
   const python=path.join(root,'state/voice/engines/music/venv/Scripts/python.exe');
   if(!fs.existsSync(python))throw voiceError('SONG_SEPARATOR_NOT_INSTALLED');
-  onProgress('separate');await run(python,['-B',path.join(root,'scripts/separate-song.py'),'--input',clip,'--output',folder,'--models',directory(root,'state/voice/engines/music/models')],{signal});
-  const hashes={};for(const name of ['vocals.wav','instrumental.wav']){const file=path.join(folder,name);if(!fs.existsSync(file)||fs.lstatSync(file).isSymbolicLink()||fs.statSync(file).size>30*1024*1024)throw voiceError('SONG_STEMS_INVALID');hashes[name]=digest(fs.readFileSync(file));}
-  const meta={version:1,provider:'netease-public',sourceId:track.id,title:track.title,artist:track.artist,startSeconds,maxSeconds:55,hashes,preparedAt:Date.now()};atomicJson(metaFile,meta);return {...meta,folder};
+  onProgress('separate');await run(python,['-B',path.join(root,'scripts/separate-song.py'),'--input',clip,'--output',folder,'--models',directory(root,'state/voice/engines/music/models')],{signal,onProgress});
+  const hashes={};for(const name of ['vocals.wav','instrumental.wav']){const file=path.join(folder,name);if(!fs.existsSync(file)||fs.lstatSync(file).isSymbolicLink()||fs.statSync(file).size>140*1024*1024)throw voiceError('SONG_STEMS_INVALID');hashes[name]=digest(fs.readFileSync(file));}
+  const meta={version:1,provider:'netease-public',sourceId:track.id,title:track.title,artist:track.artist,startSeconds,maxSeconds:playback.maxSeconds,playbackMode:playback.mode,hashes,preparedAt:Date.now()};atomicJson(metaFile,meta);return {...meta,folder};
 }
 export function songMixFilter({clarity=true,backingVolume=0.4}={}){
   if(typeof clarity!=='boolean'||!Number.isFinite(backingVolume)||backingVolume<0||backingVolume>1)throw voiceError('SONG_MIX_INVALID');
-  return clarity?`[0:a]highpass=f=75,lowpass=f=11000,equalizer=f=250:t=q:w=1:g=-2.5,equalizer=f=3200:t=q:w=1:g=1.8,asplit=2[v][side];[1:a]aformat=sample_rates=24000:channel_layouts=mono,volume=${backingVolume},equalizer=f=3000:t=q:w=0.8:g=-2[b];[b][side]sidechaincompress=threshold=0.035:ratio=2.5:attack=12:release=180:makeup=1[duck];[v][duck]amix=inputs=2:duration=first:dropout_transition=0:normalize=0,loudnorm=I=-18:TP=-1.5:LRA=9,alimiter=limit=0.92:level=0:latency=1`:`[0:a]volume=1.15[v];[1:a]volume=${backingVolume}[b];[v][b]amix=inputs=2:duration=first:dropout_transition=0:normalize=0,alimiter=limit=0.95:level=0:latency=1`;
+  return clarity?`[0:a]highpass=f=85,lowpass=f=11000,equalizer=f=250:t=q:w=1:g=-2.5,equalizer=f=500:t=q:w=1:g=-1.5,equalizer=f=3200:t=q:w=1:g=1.2,asplit=2[v][side];[1:a]aformat=sample_rates=24000:channel_layouts=mono,volume=${backingVolume},equalizer=f=3000:t=q:w=0.8:g=-2[b];[b][side]sidechaincompress=threshold=0.035:ratio=2.5:attack=12:release=180:makeup=1[duck];[v][duck]amix=inputs=2:duration=first:dropout_transition=0:normalize=0,loudnorm=I=-19:TP=-1.5:LRA=9,alimiter=limit=0.92:level=0:latency=1`:`[0:a]volume=1.15[v];[1:a]volume=${backingVolume}[b];[v][b]amix=inputs=2:duration=first:dropout_transition=0:normalize=0,alimiter=limit=0.95:level=0:latency=1`;
 }
 export async function mixSong(root,vocalPcm,prepared,{signal,run=runMusicTool,clarity=true,backingVolume=0.4}={}){
   const output=path.join(prepared.folder,'mixed-'+crypto.randomUUID()+'.pcm'),vocal=path.join(prepared.folder,'converted-'+crypto.randomUUID()+'.pcm');
   fs.writeFileSync(vocal,vocalPcm,{mode:0o600});
   try{
-    await run(path.join(root,'state/voice/tools/ffmpeg.exe'),['-hide_banner','-loglevel','error','-nostdin','-y','-f','s16le','-ar','24000','-ac','1','-i',vocal,'-i',path.join(prepared.folder,'instrumental.wav'),'-filter_complex',songMixFilter({clarity,backingVolume}),'-t','60','-ar','24000','-ac','1','-f','s16le',output],{signal,timeoutMs:60000});
-    const pcm=fs.readFileSync(output);if(pcm.length<960||pcm.length>60*48000||pcm.length%2)throw voiceError('SONG_MIX_INVALID');return pcm;
+    await run(path.join(root,'state/voice/tools/ffmpeg.exe'),['-hide_banner','-loglevel','error','-nostdin','-y','-f','s16le','-ar','24000','-ac','1','-i',vocal,'-i',path.join(prepared.folder,'instrumental.wav'),'-filter_complex',songMixFilter({clarity,backingVolume}),'-t',String(prepared.maxSeconds??60),'-ar','24000','-ac','1','-f','s16le',output],{signal,timeoutMs:60000});
+    const pcm=fs.readFileSync(output);if(pcm.length<960||pcm.length>(prepared.maxSeconds??60)*48000||pcm.length%2)throw voiceError('SONG_MIX_INVALID');return pcm;
   }finally{for(const file of [vocal,output]){try{fs.unlinkSync(file);}catch{}}}
 }

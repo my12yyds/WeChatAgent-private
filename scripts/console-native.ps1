@@ -1,4 +1,4 @@
-param([ValidateSet('exe','folder','workspace','protect')][string]$Kind)
+param([ValidateSet('exe','folder','workspace','zip','protect')][string]$Kind)
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
 [Console]::InputEncoding = [Text.UTF8Encoding]::new($false)
@@ -18,7 +18,8 @@ if ($Kind -in @('folder','workspace')) {
     if ($dialog.ShowDialog() -eq [Windows.Forms.DialogResult]::OK) { [Console]::Write($dialog.SelectedPath) }
 } else {
     $dialog = [Windows.Forms.OpenFileDialog]::new()
-    $dialog.Filter = 'Programs (*.exe)|*.exe|All files (*.*)|*.*'
+    $dialog.Filter = if($Kind -eq 'zip'){'ZIP components (*.zip)|*.zip'}else{'Programs (*.exe)|*.exe|All files (*.*)|*.*'}
+    if($Kind -eq 'zip'){$dialog.Title='选择 WeChatGirl 语音组件 ZIP 包'}
     $dialog.CheckFileExists = $true
     if ($dialog.ShowDialog() -eq [Windows.Forms.DialogResult]::OK) { [Console]::Write($dialog.FileName) }
 }

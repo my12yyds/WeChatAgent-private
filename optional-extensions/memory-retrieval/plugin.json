@@ -1,0 +1,102 @@
+{
+  "id": "memory-retrieval",
+  "name": "档案检索助手",
+  "version": "1.2.1",
+  "apiVersion": 2,
+  "host": "wechatagent",
+  "author": "my12yyds",
+  "description": "从已授权聊天的历史中寻找相关原文，例如把“猫叫什么”和“家里那只毛孩子”关联起来。支持关键词和可选本机语义模型，返回证据而不凭空补写记忆；按微信账号、聊天和真实人物隔离。首次完整检索会后台建立索引，可查看进度。关闭插件保留索引，但停止使用。",
+  "permissions": [
+    "history_read",
+    "model_generate",
+    "model_embed"
+  ],
+  "requiresAccount": true,
+  "settings": {
+    "semanticRerank": false,
+    "historyLimit": 100,
+    "candidateLimit": 20,
+    "resultLimit": 4,
+    "embeddingEnabled": false,
+    "embeddingUrl": "http://127.0.0.1:19884/v1/embeddings",
+    "embeddingModel": "multilingual-minilm-l12-v2-q8",
+    "semanticWeight": 0.65,
+    "archiveSearch": true,
+    "archiveLimit": 50000,
+    "semanticThreshold": 0.25
+  },
+  "configSchema": {
+    "semanticRerank": {
+      "type": "boolean",
+      "title": "使用当前模型重排候选（产生消耗）",
+      "description": "仅近期检索模式生效：让当前聊天模型对候选重新排序，可能增加费用和等待；关闭则直接使用关键词排序，模型失败会回退。"
+    },
+    "historyLimit": {
+      "type": "integer",
+      "title": "检索近期记录条数",
+      "minimum": 10,
+      "maximum": 100,
+      "description": "关闭完整档案检索时生效。只读取当前聊天最近这些条消息；调大可覆盖更多近期话题，但不代替完整档案。"
+    },
+    "candidateLimit": {
+      "type": "integer",
+      "title": "候选条数",
+      "minimum": 4,
+      "maximum": 30,
+      "description": "仅近期模式的候选数量。模型重排时从这些原文里选证据；越多通常越慢。"
+    },
+    "resultLimit": {
+      "type": "integer",
+      "title": "返回证据条数",
+      "minimum": 1,
+      "maximum": 8,
+      "description": "一次最多交给聊天模型多少条证据。建议先保留4；过多会增加上下文占用。"
+    },
+    "embeddingEnabled": {
+      "type": "boolean",
+      "title": "实验：启用本机向量混合检索",
+      "description": "默认关闭。开启后调用本机嵌入服务理解近义表达，需要额外模型环境和model_embed权限；不可用时回退关键词，不自动上传到云端。"
+    },
+    "embeddingUrl": {
+      "type": "string",
+      "title": "本机嵌入服务地址",
+      "maxLength": 200,
+      "description": "本机兼容/v1/embeddings的HTTP地址，只允许127.0.0.1。内置服务默认19884端口；地址改变会使用独立索引，首次需重新建立。"
+    },
+    "embeddingModel": {
+      "type": "string",
+      "title": "嵌入模型 ID",
+      "maxLength": 100,
+      "description": "内置模型填multilingual-minilm-l12-v2-q8。外接本机服务填实际模型ID；只修改名字不会下载模型。切换模型会建立独立向量索引。"
+    },
+    "semanticWeight": {
+      "type": "number",
+      "title": "语义分数权重",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "范围0–1，默认0.65。越高越重视语义接近，越低越重视原文关键词；仅向量服务正常时生效，时间新近度另作少量排序参考。"
+    },
+    "archiveSearch": {
+      "type": "boolean",
+      "title": "检索完整聊天档案（后台索引）",
+      "description": "开启则在后台按批索引完整聊天档案，不限近期100条；首次可能暂时没有结果，稍后重试或用索引工具看进度。关闭后使用近期检索。"
+    },
+    "archiveLimit": {
+      "type": "integer",
+      "title": "每个聊天索引分片上限",
+      "minimum": 100,
+      "maximum": 100000,
+      "description": "默认50000个文本分块，每块约500字符。一条长消息可能拆多块；达到上限会标明受限。不是模型上下文长度，也不会删除原始聊天。"
+    },
+    "semanticThreshold": {
+      "type": "number",
+      "title": "语义召回最低相似度",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "0–1，默认0.25；没有关键词命中时，语义相似度至少达到此值才返回。过高容易漏记，过低可能混入无关资料。"
+    }
+  },
+  "requiresHostFeatures": [
+    "archive-memory-index-v1"
+  ]
+}

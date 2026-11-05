@@ -1,3 +1,4 @@
+import {advanceSongPart} from '../packages/voice-studio/segments.mjs';
 import fs from 'node:fs';import path from 'node:path';import crypto from 'node:crypto';
 import {VoiceJobs,VOICE_TERMINAL,voiceError} from '../packages/voice-studio/jobs.mjs';
 import {synthesizeVoice} from '../packages/voice-studio/synthesis.mjs';
@@ -48,7 +49,7 @@ export class VoiceDeliveryWorker{
     if(job.account&&job.account!==identity.account||job.wxid&&job.wxid!==wxid)throw voiceError('VOICE_ACCOUNT_CHANGED');
     if(['queued','generating'].includes(job.state)){
       if((job.generationAttempts??0)>=2)throw voiceError('VOICE_GENERATION_INTERRUPTED');job.generationAttempts=(job.generationAttempts??0)+1;job.state='generating';job.generationStartedAt??=Date.now();this.save(job);
-      const timeout=AbortSignal.timeout(Math.max(1,job.deadlineAt-Date.now())),proof=await this.synthesize(adapter.directory,job.request,this.store.settings(job),{signal:AbortSignal.any([signal,timeout]),remoteJobId:job.singingJobId,onProgress:stage=>{if(!this.store.cancelled(job)&&this.store.allowed(job)&&job.progress?.stage!==stage){job.progress={stage,at:Date.now()};this.store.write(job);}},onRemoteJob:id=>{if(!this.store.cancelled(job)){job.singingJobId=id;this.save(job);}}});
+      const timeout=AbortSignal.timeout(Math.max(1,job.deadlineAt-Date.now())),proof=await this.synthesize(adapter.directory,job.request,this.store.settings(job),{signal:AbortSignal.any([signal,timeout]),remoteJobId:job.singingJobId,onProgress:(stage,detail)=>{const progress=detail&&Number.isSafeInteger(detail.part)&&Number.isSafeInteger(detail.parts)&&detail.part>=1&&detail.part<=detail.parts&&detail.parts<=60?{part:detail.part,parts:detail.parts}:{};if(!this.store.cancelled(job)&&this.store.allowed(job)&&(job.progress?.stage!==stage||progress.part!==undefined&&progress.part!==job.progress?.part)){job.progress={stage,...progress,at:Date.now()};this.store.write(job);}},onRemoteJob:id=>{if(!this.store.cancelled(job)){job.singingJobId=id;this.save(job);}}});
       if(this.store.cancelled(job))return;Object.assign(job,proof);
       if(readSendingMode(adapter.directory)==='foreground')throw voiceError('VOICE_DISABLED_IN_FOREGROUND');
       job.generationFinishedAt=Date.now();job.state='prepared';delete job.retryAt;delete job.waitReason;this.save(job);return;
@@ -71,7 +72,7 @@ export class VoiceDeliveryWorker{
     if(['submitting','submitted'].includes(job.state)){
       let receipt=voiceReceipt(await adapter.messages(wxid),job);
       if(!receipt&&Date.now()-(job.payloadCheckedAt??0)>=5000){job.payloadCheckedAt=Date.now();this.store.write(job);receipt=await this.verifyPayload(adapter.directory,job,{signal});}
-      if(receipt){job.state='confirmed';job.receipt=receipt;delete job.error;this.save(job);adapter.status.confirmed_sends++;return;}
+      if(receipt){if(this.store.cancelled(job)||!this.store.allowed(job)||signal.aborted)return;if(advanceSongPart(job,receipt)){this.save(job);adapter.status.confirmed_sends++;return;}job.state='confirmed';job.receipt=receipt;delete job.error;this.save(job);adapter.status.confirmed_sends++;return;}
       if(Date.now()-(job.startedAt??0)>45000){job.state='unconfirmed';job.error='VOICE_RECEIPT_UNCONFIRMED';this.save(job);}else{job.retryAt=Date.now()+1000;this.store.write(job);}
     }
   }

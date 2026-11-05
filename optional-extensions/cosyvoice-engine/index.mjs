@@ -1,0 +1,1 @@
+export function setup(api){api.registerTool({id:'status',description:'查看内置肥鱼语音引擎选择，不显示本机路径或凭据。',parameters:{type:'object',properties:{},additionalProperties:false},execute:async ctx=>({content:JSON.stringify({engine:ctx.config().engine,styles:['cute','gentle'],persistent:true})})});}

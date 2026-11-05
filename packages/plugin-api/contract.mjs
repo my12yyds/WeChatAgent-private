@@ -1,8 +1,10 @@
 // Pure shared data: installer, runtime, worker, DSH health and console UI use it.
 export const API_VERSION = 2;
 export const HOST_RUNTIME = 'isolated-v2';
-export const CONTRACT_REVISION = 'wechatagent-plugin-v2.5';
+export const CONTRACT_REVISION = 'wechatagent-plugin-v2.9';
 export const PERMISSION_LABELS = Object.freeze({
+  model_embed: '调用本机嵌入模型（向所选本机服务提供当前聊天片段）',
+  reply_policy: '控制已授权群聊的接话与重复回复抑制',
   storage: '保存插件数据',
   history_read: '读取当前聊天历史',
   web_fetch: '访问公开网页',
@@ -18,7 +20,14 @@ export const PERMISSION_LABELS = Object.freeze({
 });
 export const PERMISSIONS = Object.freeze(Object.keys(PERMISSION_LABELS));
 export const FEATURE_LABELS = Object.freeze({
+  'cosyvoice-speech-v1': '专用肥鱼常驻CosyVoice3语音引擎',
+  'group-reply-policy-v1': '独立群聊接话门控与表达控制',
+  'archive-memory-index-v1': '按账号聊天与人物过滤的完整档案持久索引',
+  'multipart-song-v1': '60秒片段与55秒分段完整翻唱',
+  'local-embeddings-v1': '本机嵌入向量与混合检索',
+  'local-voice-model-v1': '选择本机 Breeze GGUF 语音模型',
   'secure-plugin-settings-v1': 'Windows 用户绑定的插件设置加密',
+  'people-memory-config-v1': '可配置人物记忆、档案召回与滚动摘要',
   'actions-v1': '宿主动作',
   'documents-v1': '独立文档',
   'persona-read-v1': '当前人设读取',
@@ -41,7 +50,7 @@ export const FEATURE_LABELS = Object.freeze({
 });
 export const HOST_FEATURES = Object.freeze(Object.keys(FEATURE_LABELS));
 export const PERMISSION_FEATURES = Object.freeze({
-  documents: 'documents-v1', persona_read: 'persona-read-v1',
+  reply_policy: 'group-reply-policy-v1', model_embed: 'local-embeddings-v1', documents: 'documents-v1', persona_read: 'persona-read-v1',
   model_generate: 'model-utility-v1', schedule: 'daily-schedule-v1', audio_read: 'voice-input-v1',
   voice: 'native-voice-v1', people_memory: 'people-memory-v1', dsh_tasks: 'admin-dsh-v1',
 });
@@ -78,6 +87,15 @@ export function hostCompatibility(item, live) {
 export const PLUGIN_HOST_FILES = Object.freeze([
   'packages/plugin-api/contract.mjs', 'packages/plugin-api/catalog.mjs',
   'packages/plugin-api/settings-protection.mjs',
+  'packages/plugin-api/memory-policy.mjs',
+  'packages/plugin-api/embeddings.mjs',
+  'packages/plugin-api/archive-memory.mjs',
+  'packages/dsh-social-bridge-plugin/continuity-memory.mjs',
+  'packages/dsh-social-bridge-plugin/memory-evaluation.mjs',
+  'packages/voice-studio/segments.mjs',
+  'packages/voice-studio/music-preferences.mjs',
+  'packages/voice-studio/library.mjs',
+  'packages/voice-studio/cosyvoice.mjs',
   'packages/plugin-api/index.mjs', 'packages/plugin-api/process.mjs',
   'packages/plugin-api/worker.mjs', 'packages/plugin-api/installer.mjs',
   'packages/plugin-api/zip.mjs', 'packages/plugin-api/documents.mjs',

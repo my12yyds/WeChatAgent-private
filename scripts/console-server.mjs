@@ -1,12 +1,17 @@
+import {PluginBundles,pluginPackages} from './plugin-bundles.mjs';
+import {interfacePreferences} from './interface-preferences.mjs';
+import {replay as replayGroupPolicy} from '../optional-extensions/group-behavior/lib/policy.mjs';
 import {feedbackSnapshot,saveFeedback} from '../packages/dsh-social-bridge-plugin/assistant-feedback.mjs';
 import {createMemoryConsole} from './memory-console.mjs';
+import {createPeopleConsole} from './people-console.mjs';
+import {createMemoryEvaluation} from './memory-evaluation-console.mjs';
 import {PeopleMemory} from '../packages/plugin-api/people-memory.mjs';
 import {fishNotebookSnapshot} from './fish-notebook-console.mjs';
 import fs from 'node:fs';
 import {createPersonaCategories} from './persona-categories.mjs';
 import {createUpdateChecker} from './update-check.mjs';
 import {builtinCatalog,applyBuiltinUpdate,extensionPresentation} from './extension-status.mjs';
-import {pluginCatalog,updatePlugin,archivePlugin,packageFiles,inspectPackage,scanPlugins} from '../packages/plugin-api/catalog.mjs';
+import {pluginCatalog,updatePlugin,archivePlugin,packageFiles,inspectPackage,scanPlugins,validateValue} from '../packages/plugin-api/catalog.mjs';
 import {PluginInstaller} from '../packages/plugin-api/installer.mjs';
 import {packZip} from '../packages/plugin-api/zip.mjs';
 import {BUNDLED_PLUGINS} from '../packages/plugin-api/bundled.mjs';
@@ -29,6 +34,7 @@ import { readerAccountId, cachedReaderAccount, applyReaderAccount,activeReaderAc
 import {verifyWeChatAccount} from './wechat-account-check.mjs';
 import {createMusicConsole} from './music-console.mjs';
 import {createVoiceConsole} from './voice-console.mjs';
+import {createVoiceComponents} from './voice-components.mjs';
 import {createSpeechPluginConsole} from './speech-plugin-console.mjs';
 import {hostCompatibility} from '../packages/plugin-api/contract.mjs';
 import {ForegroundSender} from './foreground-sender.mjs';
@@ -99,7 +105,7 @@ export function createConsole({ root = projectRoot, port = 3210, runner, readerS
   const updates=createUpdateChecker({root,fetchImpl});
   const wechatClients=createClientDetector(root,{scan:wechatClientScan});
   const publicDir = path.join(projectRoot, 'public', 'console');
-  const pluginInstaller=new PluginInstaller(root);
+  const pluginInstaller=new PluginInstaller(root);const pluginBundles=new PluginBundles(root,projectRoot,pluginInstaller,{fetcher:fetchImpl});
   const musicConsole=createMusicConsole(root,{officialLogin});
   const voiceConsole=createVoiceConsole(root);
   const speechChecks=createSpeechPluginConsole({root,fetchImpl,...(speechCapabilities?{readCapabilities:speechCapabilities}:{})});
@@ -118,6 +124,8 @@ export function createConsole({ root = projectRoot, port = 3210, runner, readerS
   const processRecovery=createProcessRecovery({root,probe:processProbe,stop:processStop});
   let statusPromise; let statusTime = 0;
   const memoryView=createMemoryConsole({root,configFor:()=>snapshot().config,plugin});
+  const peopleView=createPeopleConsole({root,configFor:()=>snapshot().config,plugin});
+  const memoryEvaluation=createMemoryEvaluation({root,configFor:()=>snapshot().config,plugin});
   const snapshot = () => {
     const raw = fs.readFileSync(fs.existsSync(configFile) ? configFile : path.join(root, 'config', 'wechatagent.example.json'), 'utf8');
     return { config: JSON.parse(raw.replace(/^\uFEFF/, '')), revision: hash(raw) };
@@ -143,7 +151,8 @@ export function createConsole({ root = projectRoot, port = 3210, runner, readerS
     atomic(preferenceFile, { ...previous, pendingApply: true, dshRestartRequired: previous.dshRestartRequired || dsh });
     statusTime = 0;
   };
-  const assertIdle = () => { if(shuttingDown)throw fault('正在退出并停止后台服务，请等待操作完成。',409);if (activeJob || protectingCredential || processRecoveryBusy) throw fault('有操作正在进行，请等它完成后再保存或执行其他操作。', 409); };
+  const voiceComponents=createVoiceComponents({root,pickFile:()=>filePicker?filePicker('zip'):nativeHelper('zip'),python:()=>snapshot().config.runtime?.python??'python'});
+  const assertIdle = () => { if(shuttingDown)throw fault('正在退出并停止后台服务，请等待操作完成。',409);if(voiceComponents.busy)throw fault('语音组件正在选择或导入，请等待完成后再保存、重启或退出。',409);if (activeJob || protectingCredential || processRecoveryBusy) throw fault('有操作正在进行，请等它完成后再保存或执行其他操作。', 409); };
   function shutdown() {
     if(shutdownPromise)return shutdownPromise;
     assertIdle();shuttingDown=true;let output='';
@@ -194,6 +203,7 @@ export function createConsole({ root = projectRoot, port = 3210, runner, readerS
     if(!response.ok){const messages={SESSION_GROUP_SERVICE_UNAVAILABLE:'DSH 工作区服务尚未就绪，请从托盘完整退出并重开 DSH。',SESSION_GROUP_INVALID_NAME:'分组名称需要 1–60 个字符。',SESSION_GROUP_INVALID_PATH:'请选择一个已存在、可访问的完整目录。',SESSION_GROUP_CHANGED:'工作区列表已变化，请刷新会话页面后重试。',SESSION_GROUP_NOT_FOUND:'工作区已被移除，请刷新后重新选择。',SESSION_GROUP_DUPLICATE_NAME:'DSH 中已有同名工作区，请换一个名称。',SESSION_GROUP_NOT_EMPTY:'此工作区仍有未归档的 DSH 会话，请先移走它们。',SESSION_GROUP_SESSION_BUSY:'此聊天正在回复或维护，请稍后再移动。',SESSION_GROUP_SESSION_CHANGED:'当前会话已变化，请刷新后重新移动。',SESSION_GROUP_ACCOUNT_CHANGED:'微信账号已切换，请重开 DSH 后重试。',SESSION_GROUP_CHAT_NOT_ALLOWED:'请选择聊天范围中已保存的聊天。',SESSION_GROUP_CONFIRM_REQUIRED:'请确认跨目录移动时保留历史的方式。',SESSION_GROUP_SOURCE_UNAVAILABLE:'原会话的工作目录无法访问，请恢复该目录后再移动。'};throw fault(messages[result.error]??(route.startsWith('/plugin-actions/')||route.startsWith('/fish-notebook/')?'插件操作暂未完成，请检查插件授权并确认 DSH 已加载新版宿主。':'工作区操作未完成，原会话仍保留。请检查 DSH 运行日志后重试。'),[400,404,409].includes(response.status)?response.status:503);}
     return result;
   }
+  async function assertMemoryWriterReady(){let memoryHealth;try{memoryHealth=await plugin('/health');}catch{}if(memoryHealth?.ok&&memoryHealth.memoryWorkbench!=='fact-management-v1')throw fault('DSH 仍使用旧版记忆写入方式，请从托盘完整重开 DSH 后再修改事实。',409);}
   function buffered() {
     const buffer = optionalJson(path.join(root, 'state', 'social-messages.json'), { chats: {} });
     let member={chats:{}};
@@ -394,7 +404,7 @@ export function createConsole({ root = projectRoot, port = 3210, runner, readerS
         if(route==='/packages/plugin-api/bundled.mjs'){res.writeHead(200,{'Content-Type':'text/javascript; charset=utf-8','X-Content-Type-Options':'nosniff'});res.end(fs.readFileSync(path.join(projectRoot,'packages/plugin-api/bundled.mjs')));return;}
         if(route==='/packages/plugin-api/contract.mjs'){res.writeHead(200,{'Content-Type':'text/javascript; charset=utf-8','X-Content-Type-Options':'nosniff'});res.end(fs.readFileSync(path.join(projectRoot,'packages/plugin-api/contract.mjs')));return;}
         if(route==='/plugin-example.zip'){const example=path.join(projectRoot,'examples/plugins/chat-notes');inspectPackage(example);res.writeHead(200,{'Content-Type':'application/zip','Content-Disposition':'attachment; filename="chat-notes-1.0.0.zip"','X-Content-Type-Options':'nosniff'});res.end(packZip(packageFiles(example)));return;}
-        const builtinMatch=route.match(/^\/plugin-packages\/([a-z][a-z0-9-]{0,39})\.zip$/);if(builtinMatch){const bundle=BUNDLED_PLUGINS.find(item=>item.id===builtinMatch[1]&&item.zip);if(!bundle)throw fault('没有找到这个内置插件包。',404);const source=path.join(projectRoot,bundle.source),item=inspectPackage(source);if(item.id!==bundle.id||item.version!==bundle.version)throw fault('内置插件包版本校验失败。',409);const bytes=packZip(packageFiles(source));res.writeHead(200,{'Content-Type':'application/zip','Content-Disposition':`attachment; filename="${bundle.id}-${bundle.version}.zip"`,'X-Content-Type-Options':'nosniff'});res.end(bytes);return;}
+        const builtinMatch=route.match(/^\/plugin-packages\/([a-z][a-z0-9-]{0,39})\.zip$/);if(builtinMatch){const bundle=BUNDLED_PLUGINS.find(item=>item.id===builtinMatch[1]&&item.zip);if(!bundle)throw fault('没有找到这个内置插件包。',404);const source=path.join(projectRoot,bundle.source);if(!fs.existsSync(path.join(source,'plugin.json'))){const entry=pluginPackages(projectRoot).entries.find(p=>p.id===bundle.id);if(!entry)throw fault('插件包未登记。',404);res.writeHead(302,{Location:entry.url});res.end();return;}const item=inspectPackage(source);if(item.id!==bundle.id||item.version!==bundle.version)throw fault('内置插件包版本校验失败。',409);const bytes=packZip(packageFiles(source));res.writeHead(200,{'Content-Type':'application/zip','Content-Disposition':`attachment; filename="${bundle.id}-${bundle.version}.zip"`,'X-Content-Type-Options':'nosniff'});res.end(bytes);return;}
         const assets = { '/': ['index.html', 'text/html; charset=utf-8'], '/index.html': ['index.html', 'text/html; charset=utf-8'], '/console.css': ['console.css', 'text/css; charset=utf-8'], '/console.js': ['console.js', 'text/javascript; charset=utf-8'], '/persona-files.mjs': ['persona-files.mjs', 'text/javascript; charset=utf-8'], '/appearance.js': ['appearance.js', 'text/javascript; charset=utf-8'], '/appearance.css': ['appearance.css', 'text/css; charset=utf-8'], '/icons.svg': ['icons.svg', 'image/svg+xml'], '/app-icon.png': ['app-icon.png', 'image/png'], '/favicon.svg': ['app-icon.png', 'image/png'] };
         assets['/extension-market.js']=['extension-market.js','text/javascript; charset=utf-8'];assets['/extension-market.css']=['extension-market.css','text/css; charset=utf-8'];
         assets['/plugins.js']=['plugins.js','text/javascript; charset=utf-8'];assets['/plugins.css']=['plugins.css','text/css; charset=utf-8'];
@@ -406,7 +416,7 @@ export function createConsole({ root = projectRoot, port = 3210, runner, readerS
         for(const file of ['workspace-layout.js','layout-model.mjs','session-usage.js'])assets['/'+file]=[file,'text/javascript; charset=utf-8'];
         assets['/workspace-layout.css']=['workspace-layout.css','text/css; charset=utf-8'];
         assets['/assistant-feedback.js']=['assistant-feedback.js','text/javascript; charset=utf-8'];
-        for(const file of ['theme-init.js','color-theme.js','persona-studio.js','persona-studio-model.mjs'])assets['/'+file]=[file,'text/javascript; charset=utf-8'];
+        for(const file of ['interface-model.mjs','theme-init.js','color-theme.js','persona-studio.js','persona-studio-model.mjs'])assets['/'+file]=[file,'text/javascript; charset=utf-8'];
         for(const file of ['ui-polish.css','persona-studio.css','redesign.css'])assets['/'+file]=[file,'text/css; charset=utf-8'];
         assets['/memory-view.js']=['memory-view.js','text/javascript; charset=utf-8'];assets['/memory-view.css']=['memory-view.css','text/css; charset=utf-8'];
         assets['/fish-notebook.js']=['fish-notebook.js','text/javascript; charset=utf-8'];assets['/fish-notebook.css']=['fish-notebook.css','text/css; charset=utf-8'];
@@ -430,12 +440,19 @@ export function createConsole({ root = projectRoot, port = 3210, runner, readerS
       if(req.method==='GET'&&route==='/api/assistant-feedback')return reply(200,feedbackSnapshot(root));
       if(req.method==='GET'&&route==='/api/memory')return reply(200,memoryView.overview());
       if(req.method==='GET'&&route==='/api/fish-notebook')return reply(200,fishNotebookSnapshot(root,snapshot(),url.searchParams));
+      if(req.method==='GET'&&route==='/api/interface-preferences')return reply(200,interfacePreferences(root).snapshot());
+      if(req.method==='GET'&&route==='/api/plugin-packages')return reply(200,pluginPackages(projectRoot));
       if(req.method==='GET'&&route==='/api/music')return reply(200,musicConsole.snapshot());
+      if(req.method==='GET'&&route==='/api/voice-studio/music-preferences')return reply(200,voiceConsole.musicPreferences());
       if(req.method==='GET'&&route==='/api/voice-studio/engine')return reply(200,voiceConsole.engine());
       if(req.method==='GET'&&route==='/api/voice-studio/voices')return reply(200,voiceConsole.voices());
       if(req.method==='GET'&&route==='/api/voice-studio')return reply(200,await voiceConsole.snapshot());
+      if(req.method==='GET'&&route==='/api/voice-components')return reply(200,voiceComponents.snapshot());
       if(req.method==='GET'&&route==='/api/memory/members')return reply(200,memoryView.members(url.searchParams));
       if(req.method==='GET'&&route==='/api/memory/summaries')return reply(200,await memoryView.summaries(url.searchParams));
+      if(req.method==='GET'&&route==='/api/memory/people')return reply(200,peopleView.snapshot(url.searchParams));
+      if(req.method==='GET'&&route==='/api/memory/diagnostics')return reply(200,await peopleView.diagnostics());
+      if(req.method==='GET'&&route==='/api/memory/evaluation')return reply(200,memoryEvaluation.snapshot());
       if (req.method === 'GET' && route === '/api/config') return reply(200, { ...snapshot(), ...optionalJson(preferenceFile) });
       if(req.method==='GET'&&route==='/api/sticker-pool'){try{return reply(200,await reader('/api/v1/stickers/pool-status'));}catch{throw fault('表情收集状态暂不可用，请检查读取服务与微信账号连接。',503);}}
       if(req.method==='GET'&&route==='/api/sticker-diagnostics'){
@@ -527,17 +544,27 @@ export function createConsole({ root = projectRoot, port = 3210, runner, readerS
       }
       if (req.method !== 'POST') throw fault('接口不存在。', 404);
       if (!req.headers['content-type']?.startsWith('application/json')) throw fault('请使用控制台表单。', 415);
-      const body = await readBody(req,['/api/sticker-manager/import','/api/plugins/inspect','/api/voice-studio/import-song','/api/voice-studio/voices','/api/vision-test'].includes(route)?11300000:128*1024);
+      const body = await readBody(req,['/api/sticker-manager/import','/api/plugins/bundle/inspect','/api/plugins/inspect','/api/voice-studio/import-song','/api/voice-studio/voices','/api/vision-test'].includes(route)?11300000:128*1024);
       if(route==='/api/updates/check')return reply(200,await updates.check({force:true}));
       if (route === '/api/jobs') return reply(202, startJob(body));
       assertIdle();
       if(route==='/api/vision-test'){if(!body||typeof body.b64!=='string'||body.b64.length>1050000)throw fault('测试图片过大，请使用768 KiB以内的图片。');const settings=snapshot().config.dsh;const health=await plugin('/health');if(health.visionTest!=='isolated-image-test-v1')throw fault('请从托盘完整退出并重新打开 DSH，以加载图片测试接口。',409);const controller=new AbortController();req.once('aborted',()=>controller.abort());res.once('close',()=>{if(!res.writableEnded)controller.abort();});return reply(200,await plugin('/vision-test',{...body,chatSelection:body.chatSelection??{provider:settings.provider,model:settings.model}},{signal:controller.signal}));}
       const musicAction=/^\/api\/music\/([a-z-]+)$/.exec(route);if(musicAction)return reply(200,await musicConsole.action(musicAction[1],body));
+      if(route==='/api/voice-components/select')return reply(200,await voiceComponents.select());
+      if(route==='/api/voice-components/import')return reply(202,voiceComponents.start(body));
+      if(route==='/api/plugins/bundle/inspect')return reply(200,pluginBundles.inspect(body));
+      if(route==='/api/plugins/bundle/install')return reply(200,pluginBundles.install(body));
+      if(route==='/api/plugins/bundle/download')return reply(200,await pluginBundles.download(body));
+      if(route==='/api/interface-preferences')return reply(200,interfacePreferences(root).save(body));
+      if(route==='/api/voice-studio/music-preferences')return reply(200,voiceConsole.saveMusicPreferences(body));
       if(route==='/api/voice-studio/engine')return reply(200,await voiceConsole.saveEngine(body));
       if(route==='/api/voice-studio/preview-engine')return reply(200,await voiceConsole.previewEngine(body));
       if(route==='/api/voice-studio/voices')return reply(200,voiceConsole.changeVoice(body));
       if(route==='/api/voice-studio/preview-voice')return reply(200,await voiceConsole.previewVoice(body));
       if(route==='/api/voice-studio/import-song')return reply(200,await voiceConsole.importSong(body));
+      if(route==='/api/voice-studio/delete-songs')return reply(200,voiceConsole.deleteSongs(body));
+      if(route==='/api/voice-studio/song')return reply(200,voiceConsole.song(body));
+      if(route==='/api/voice-studio/compare-engines')return reply(200,await voiceConsole.compareEngines(body));
       if(route==='/api/voice-studio/test')return reply(200,voiceConsole.test(body));
       if(route==='/api/sending-mode/check'){
         const sender=new ForegroundSender(root);
@@ -545,7 +572,10 @@ export function createConsole({ root = projectRoot, port = 3210, runner, readerS
         catch(error){return reply(200,{available:false,reason:error.message});}
         finally{sender.close();}
       }
-      if(route==='/api/people-memory/forget'){const account=activeReaderAccount(root);if(!account.id||body.scope!==account.id||body.confirmed!==true)throw fault('账号已变化或尚未确认，请刷新。',409);return reply(200,new PeopleMemory({root,accountScope:hash(account.id),accountId:account.id}).forget(body.id));}
+      if(route==='/api/people-memory/forget'){await assertMemoryWriterReady();const account=activeReaderAccount(root);if(!account.id||body.scope!==account.id||body.confirmed!==true)throw fault('账号已变化或尚未确认，请刷新。',409);return reply(200,new PeopleMemory({root,accountScope:hash(account.id),accountId:account.id}).forget(body.id));}
+      if(route==='/api/memory/people'){await assertMemoryWriterReady();return reply(200,peopleView.change(body));}
+      if(route==='/api/memory/evaluation')return reply(200,memoryEvaluation.start(body));
+      if(route==='/api/memory/evaluation/cancel')return reply(200,memoryEvaluation.cancel(body));
       if(route==='/api/chat-model'){
         const previous=snapshot();if(body.revision!==previous.revision)throw fault('设置已变化，请重新打开模型选择。',409);
         if(!allowedConversation(previous.config.wechat,body.key))throw fault('请选择已允许的聊天。',403);
@@ -554,6 +584,7 @@ export function createConsole({ root = projectRoot, port = 3210, runner, readerS
         const config=structuredClone(previous.config);config.dsh.chats??={};if(selected===null)delete config.dsh.chats[body.key];else config.dsh.chats[body.key]={provider:selected.provider,model:selected.model};
         validateConfig(config);backup(configFile);atomic(configFile,config);statusTime=0;return reply(200,{...snapshot(),...optionalJson(preferenceFile)});
       }
+      if(route==='/api/group-behavior/replay'){if(!body||Object.keys(body).some(k=>k!=='settings'))throw fault('回放设置无效。');const item=inspectPackage(path.join(projectRoot,'optional-extensions/group-behavior'));validateValue(body.settings,{type:'object',properties:item.configSchema,additionalProperties:false});return reply(200,{simulated:true,modelCalls:0,messagesSent:0,results:replayGroupPolicy([{direct:true},{direct:false,deltaSeconds:5},{direct:true,deltaSeconds:5}],body.settings)});}
       if(route==='/api/plugins/inspect')return reply(200,pluginInstaller.inspect(body));
       if(route==='/api/plugins/install')return reply(200,pluginInstaller.install(body));
       if(route==='/api/plugins/cancel')return reply(200,pluginInstaller.cancel(body.ticket));
@@ -752,7 +783,8 @@ export function createConsole({ root = projectRoot, port = 3210, runner, readerS
     listen();
   });
   server.on('close',()=>{pluginInstaller.dispose();speechChecks.close();});
-  return { server, shutdown, isBusy: () => shuttingDown || !!activeJob || protectingCredential || processRecoveryBusy, close: () => { server.closeAllConnections(); server.close(); }, start };
+  server.once('close',()=>memoryEvaluation.close());
+  return { server, shutdown, isBusy: () => shuttingDown || !!activeJob || protectingCredential || processRecoveryBusy || voiceComponents.busy, close: () => { memoryEvaluation.close();server.closeAllConnections(); server.close(); }, start };
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

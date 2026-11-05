@@ -89,12 +89,17 @@ def import_library_sticker(reader,body):
     label=clean_label({'description':body.get('description'),'tags':body.get('tags')})
     raw=native_gif_bytes(raw);md5=hashlib.md5(raw).hexdigest();digest=hashlib.sha256(raw).hexdigest()
     image_id=send_resources(reader).prepare(key,raw)
-    admitted=False;collection='unavailable'
-    try:
-        admitted=pool.store(raw,{'md5':md5,'len':len(raw)},md5,key,int(time.time()),pool.bound_id(key,digest),external=True)
-        collection='saved' if admitted else 'review-pending'
-        if not admitted:reader.pump_sticker_pool_review()
-    except (RuntimeError,OSError,ValueError):pass
+    admitted=False;collection='disabled'
+    if pool.dsh_enabled():
+        collection='unavailable'
+        try:
+            admitted=pool.store(raw,{'md5':md5,'len':len(raw)},md5,key,int(time.time()),pool.bound_id(key,digest),external=True)
+            if admitted:collection='saved'
+            elif not pool.dsh_enabled():collection='disabled'
+            elif digest in pool.read()['waiting']:collection='review-pending'
+            else:collection='skipped'
+            if collection=='review-pending':reader.pump_sticker_pool_review()
+        except (RuntimeError,OSError,ValueError):pass
     if not pool.active() or not meme_import_allowed(pool.policy(),key):raise PermissionError('Meme import permission changed')
     try:
         with reader.lock:reader.sticker_labels.save(reader.account.name,[(md5,label)])

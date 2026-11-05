@@ -28,7 +28,8 @@ class StickerManager:
             state=self.pool.read();items=[]
             for digest,item in reversed(list(state['entries'].items())):
                 label=self.label(item)
-                items.append({'id':digest,'name':item.get('name') or label['description'] or '聊天收集的表情 '+digest[:6],**label,
+                items.append({'id':digest,'name':item.get('name') or label['description'] or '已保存的表情 '+digest[:6],**label,
+                              'collectionOrigins':item.get('collectionOrigins',['legacy']),
                               'manual':item.get('manual') is True,'animated':item.get('animated',False),'bytes':item['fields']['len'],
                               'width':item['fields']['width'],'height':item['fields']['height'],'addedAt':item['receivedAt']})
             self.active()
