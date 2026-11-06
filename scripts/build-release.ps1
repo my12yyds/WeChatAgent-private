@@ -1,7 +1,7 @@
-﻿param(
+param(
   [Parameter(Mandatory=$true)][string]$PayloadRoot,
   [Parameter(Mandatory=$true)][string]$OutputDirectory,
-  [string]$Version = '0.5.5',
+  [string]$Version = '0.5.6',
   [string]$VoiceComponentsZip = '',
   [switch]$Resume,
   [switch]$InstallerTestMode

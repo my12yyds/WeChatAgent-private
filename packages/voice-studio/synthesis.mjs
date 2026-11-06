@@ -18,7 +18,7 @@ export async function synthesizeVoice(root,request,settings,{signal,fetcher=fetc
   const saved=new SavedSongs(root),cached=saved.find(request,settings);if(cached){onProgress('cached');return saved.restore(cached,signal);}if(request.cachedOnly)throw voiceError('SAVED_SONG_UNAVAILABLE');
   let preparedSong;const singingOptions={signal,fetcher,remoteJobId,onRemoteJob,onProgress,mixSettings:settings,onPreparedSong:value=>{preparedSong=value;}};
   const port=settings.breezePort??19881;if(!Number.isSafeInteger(port)||port<1024||port>65534)throw voiceError('VOICE_PORT_INVALID');
-  const profile=request.kind==='speech'&&settings.customVoiceProfile?validateVoiceProfile(settings.customVoiceProfile):null;
+  const profile=request.kind==='speech'&&settings.speechEngine?.mode!=='external'&&settings.customVoiceProfile?validateVoiceProfile(settings.customVoiceProfile):null;
   const dedicated=request.kind==='speech'&&settings.speechEngine?.mode==='cosyvoice';
   const external=request.kind==='speech'&&settings.speechEngine?.mode==='external',style=profile?.baseStyle??request.style,useFeiyu=dedicated?false:external?profile?.feiyu===true:profile?.feiyu??settings.feiyuTimbre===true;
   let pcm;

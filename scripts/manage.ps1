@@ -25,6 +25,12 @@ function Owned-Process($Item,[switch]$AllowStale) {
     }
     $process = Get-CimInstance Win32_Process -Filter ('ProcessId=' + $Item.pid)
     if (-not $process) { return $null }
+    # Windows can reuse the PID for a protected process whose path and command
+    # line are unreadable. A different executable name is enough to rule it out.
+    if ($AllowStale -and $process.Name -and $Item.exe -and $process.Name -ne [IO.Path]::GetFileName([string]$Item.exe)) {
+        Write-Host 'Discarded a stale service process record; unrelated process was not stopped.'
+        return $null
+    }
     if (-not $process.ExecutablePath -or -not $process.CommandLine) { throw 'Cannot verify recorded process identity; refusing to stop it.' }
     if ($process.ExecutablePath -ne $Item.exe -or $process.CommandLine.IndexOf($Item.marker,[StringComparison]::OrdinalIgnoreCase) -lt 0) {
         if ($AllowStale) { Write-Host 'Discarded a stale service process record; unrelated process was not stopped.'; return $null }

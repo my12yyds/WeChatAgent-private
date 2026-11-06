@@ -23,3 +23,9 @@ test('duplicate names and revoked permissions block foreground submission',async
  await assert.rejects(b.hook.send('private','42','hello','a'),/UNCONFIRMED/);assert.equal(b.calls.foreground,0);
 });
 test('invalid transport modes rejected; native remains the default',()=>{validateTextTransport(undefined);validateTextTransport({mode:'native'});assert.throws(()=>validateTextTransport({mode:'auto'}));});
+test('a definitive foreground failure retains its reason and is not replayed',async t=>{
+ const {hook,calls}=fixture(t);
+ hook.foreground.send=async()=>{calls.foreground++;return {accepted:false,attempted:false,code:'FOREGROUND_SEND_BUTTON_UNAVAILABLE'};};
+ for(let attempt=0;attempt<2;attempt++)await assert.rejects(hook.send('private','42','hello','a'),/FOREGROUND_SEND_BUTTON_UNAVAILABLE/);
+ assert.deepEqual(calls,{native:0,foreground:1});
+});

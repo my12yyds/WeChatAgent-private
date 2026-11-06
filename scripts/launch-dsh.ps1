@@ -7,8 +7,15 @@ if (-not $config.runtime.dshDesktop -or -not (Test-Path -LiteralPath $config.run
 $dshAuthHelper=Join-Path $PSScriptRoot 'dsh-local-auth.mjs'
 if(Test-Path -LiteralPath $dshAuthHelper){
     $dshAuthNode=(Get-Command node -ErrorAction Stop).Source
-    $dshAuthResult=& $dshAuthNode $dshAuthHelper $root 2>$null
-    if($LASTEXITCODE -ne 0){throw 'DSH_AUTH_RECOVERY_UNAVAILABLE: Local startup cache could not be checked safely; existing data was preserved.'}
+    # Windows PowerShell can treat native stderr as terminating with Stop.
+    # A warning does not mean the cache check failed; use its exit code.
+    $previousErrorPreference=$ErrorActionPreference
+    try {
+        $ErrorActionPreference='Continue'
+        $dshAuthResult=& $dshAuthNode --disable-warning=ExperimentalWarning $dshAuthHelper $root 2>$null
+        $dshAuthExitCode=$LASTEXITCODE
+    } finally { $ErrorActionPreference=$previousErrorPreference }
+    if($dshAuthExitCode -ne 0){throw 'DSH_AUTH_RECOVERY_UNAVAILABLE: Local startup cache could not be checked safely; existing data was preserved.'}
 }
 $previousDshHome=$env:DSH_HOME
 try {

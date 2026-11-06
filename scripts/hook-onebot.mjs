@@ -229,11 +229,15 @@ export class HookOneBot {
               this.reload();if((this.project.wechat?.textTransport?.mode??'native')!=='foreground'||!this.allowed(kind,target))fail('CONVERSATION_NOT_ALLOWED');
               const current=await this.foregroundTarget(kind,target);if(current.username!==wxid||current.displayName!==targetSession.displayName)fail('TARGET_MAPPING_AMBIGUOUS_OR_MISSING');
             });
-            if(!accepted?.accepted)throw Error('FOREGROUND_SUBMISSION_UNCONFIRMED');
+            if(!accepted?.accepted)throw Error(accepted?.attempted===false&&/^FOREGROUND_[A-Z_]+$/.test(accepted.code??'')?accepted.code:'FOREGROUND_SUBMISSION_UNCONFIRMED');
             accepted={ret:0};
           }else accepted=mention?await this.native('/SendTextAtMsg',{wxidorgid:wxid,msg:text,atUserIds:[mentionWxid]},identity.account):await this.native('/SendTextMsg',{wxidorgid:wxid,msg:text},identity.account);
         }
         catch(error){
+          if(mode==='foreground'&&accepted?.attempted===false&&/^FOREGROUND_[A-Z_]+$/.test(error.message)){
+            reject(error.message);
+            throw new AdapterError(error.message,{rejected:true,attempted:false,delivery_id:deliveryId??operation});
+          }
           if(/^API_HTTP_(400|401|403|409|429)$/.test(error.message)){
             reject(error.message);
             throw new AdapterError(error.message==='API_HTTP_429'?'SENDER_BUSY':error.message,{rejected:true,attempted:false,delivery_id:deliveryId??operation});
