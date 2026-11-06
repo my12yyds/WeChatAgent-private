@@ -5,10 +5,32 @@ import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import {bindDshAccess,DSH_ACCESS_POLICY} from '../packages/dsh-social-bridge-plugin/dsh-access.mjs';
+import {apply as applyToolGuard,bindScopedToolPresentation} from '../packages/dsh-social-bridge-plugin/social-tool-restrict.mjs';
 import {verifiedBatchSender} from '../packages/dsh-social-bridge-plugin/assistant-policy.mjs';
 import {validateConversationSettings} from '../packages/dsh-social-bridge-plugin/conversation-policy.mjs';
 import {applyChatSettings,chatSettingsSnapshot} from '../public/console/conversation-settings.mjs';
 const key='wechat:private:123';
+test('current DSH assembles presentation without tools and declares only live authorized schemas through its executor',async()=>{
+  let guard,assemble,scoped,admitted=true,delegated;
+  const all=[{name:'write'},{name:'read',deferLoading:true}];
+  const executor={describe:definitions=>({schemas:definitions,knownNames:['write','read']}),execute:input=>{delegated=input;}};
+  const ctx={tools:{guard:fn=>{guard=fn;},selectExecutor:()=>executor,setExecutor:value=>{scoped=value;}},
+    on:(_event,fn)=>{assemble=fn;},
+    [DSH_ACCESS_POLICY]:{names:()=>new Set(admitted?['read']:[]),check:name=>admitted&&name==='read'}};
+  const agent={ctx};
+  applyToolGuard(ctx);
+  bindScopedToolPresentation(agent);
+  const presentation={sections:[{name:'harness:identity',text:'DSH'},{name:'persona',text:'Keep me'}],contexts:[],variables:{}};
+  assert.deepEqual(await assemble({}, {scope:agent},async()=>presentation),{...presentation,sections:[presentation.sections[1]]});
+  assert.deepEqual(scoped.describe(all),{schemas:[{name:'read'}],knownNames:['read']});
+  assert.equal(guard({agent,name:'read'}),undefined);
+  assert.ok(guard({agent,name:'write'}));
+  const input={agent,calls:[]};scoped.execute(input);assert.equal(delegated,input);
+  admitted=false;
+  assert.deepEqual(scoped.describe(all),{schemas:[],knownNames:[]});
+  assert.ok(guard({agent,name:'read'}));
+  assert.deepEqual((await assemble({}, {scope:agent},async()=>({...presentation,tools:all}))).tools,[]);
+});
 function fixture(t){
  const root=fs.mkdtempSync(path.join(os.tmpdir(),'social-dsh-'));
  fs.mkdirSync(path.join(root,'config'));

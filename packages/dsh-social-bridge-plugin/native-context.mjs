@@ -1,7 +1,7 @@
 import {requestedSongMode} from '../voice-studio/music-preferences.mjs';
 import {AssistantNotifications} from './assistant-notifications.mjs';
 import {conversationModel,modelCatalog,bindConversationModel} from './model-routing.mjs';
-import {apply as applyAssistantToolGuard} from './social-tool-restrict.mjs';
+import {apply as applyAssistantToolGuard,bindScopedToolPresentation} from './social-tool-restrict.mjs';
 import {AssistantTasks,ASSISTANT_CONTROLLER,liveTask,taskFault,assistantHelp,formatAssistantTask} from './assistant-tasks.mjs';
 import {createAssistantControl} from './assistant-control.mjs';
 import { activeReaderAccount } from '../../scripts/reader-account-state.mjs';
@@ -432,6 +432,7 @@ export function apply(ctx, config={}) {
     });
   }
   async function bindConversationTools(agent,key,sid){
+    bindScopedToolPresentation(agent);
     if(!conversationModelBindings.has(sid)){
       const dispose=bindConversationModel(agent.ctx,()=>pending.get(sid)?.selectedModel??modelFor(key));conversationModelBindings.set(sid,dispose);agent.ctx.effect(()=>()=>{dispose();conversationModelBindings.delete(sid);});
     }

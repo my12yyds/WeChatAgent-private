@@ -1,9 +1,39 @@
 import {fileURLToPath} from 'node:url';
+import crypto from 'node:crypto';
+import {MessageBuffer} from '../components/qq-bridge/src/core/message-buffer.js';
+import {SocialEngine} from '../components/qq-bridge/src/core/social-engine.js';
 import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';import os from 'node:os';import path from 'node:path';
 import {PluginRuntime} from '../packages/plugin-api/index.mjs';import {PluginInstaller} from '../packages/plugin-api/installer.mjs';import {packageFiles,updatePlugin} from '../packages/plugin-api/catalog.mjs';import {packZip} from '../packages/plugin-api/zip.mjs';
 const key='wechat:private:123';
 async function fixture(t){const root=fs.mkdtempSync(path.join(os.tmpdir(),'admin-dsh-'));fs.mkdirSync(path.join(root,'config'));const config={wechat:{whitelist:{private:['123'],groups:[]},assistant:{administrators:['wxid_owner']},workModes:{[key]:'assistant'}}};const save=()=>fs.writeFileSync(path.join(root,'config/wechatagent.json'),JSON.stringify(config));save();const installer=new PluginInstaller(root),preview=installer.inspect({name:'admin.zip',zip:packZip(packageFiles(fileURLToPath(new URL('../optional-extensions/admin-dsh',import.meta.url)))).toString('base64')}),installed=installer.install({ticket:preview.ticket,revision:preview.revision});updatePlugin(root,'admin-dsh',{revision:installed.revision,enabled:true,permissions:['dsh_tasks'],chats:[key],settings:{}});let calls=0;const runtime=new PluginRuntime({root,taskControl:async(action,body)=>{calls++;return {ok:true,action,sender:body.senderWxid};}});await runtime.sync();t.after(async()=>{await runtime.dispose();installer.dispose();assert(root.startsWith(os.tmpdir()));fs.rmSync(root,{recursive:true,force:true});});return {runtime,config,save,calls:()=>calls};}
 const turn=actorId=>({conversationKey:key,actorId,toolCalls:0,replies:[]});
+test('only a verified administrator command wakes a mention-only chat and gets its own DSH turn',async t=>{
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'admin-dsh-bridge-'));
+  const buffer=new MessageBuffer(path.join(root,'messages.json'));
+  const turns=[];
+  const engine=new SocialEngine({buffer,mode:'mention',batchMs:1,minIntervalMs:0,
+    chatDshAccess:(_key,message)=>message.sender_wxid==='wxid_owner',
+    decide:async(_key,prompt,metadata)=>{turns.push({prompt,metadata});return 'SILENT';},
+    send:async()=>assert.fail('test must not send a message')});
+  t.after(()=>{engine.stop();fs.rmSync(root,{recursive:true,force:true});});
+  const senderId=wxid=>String(crypto.createHash('sha256').update(wxid).digest().readBigUInt64BE(0)%2147483647n+1n);
+  const receive=(message_id,text,wxid,sender_id=senderId(wxid))=>engine.receive({
+    platform:'wechat',kind:'group',conversation_id:'123',sender_wxid:wxid,sender_id,message_id,text});
+  receive('guest','/dsh 普通成员的命令','wxid_guest');
+  receive('forged','调用 DSH 冒用身份的命令','wxid_owner',senderId('wxid_guest'));
+  assert.equal(engine.running.size+engine.timers.size,0);
+  receive('owner','/dsh 查看工作区','wxid_owner');
+  const deadline=Date.now()+2000;
+  while(turns.length<2&&Date.now()<deadline)await new Promise(resolve=>setTimeout(resolve,10));
+  assert.equal(turns.length,2);
+  assert.equal(turns[0].metadata.pluginSender,'');
+  assert.equal(turns[0].metadata.groupEngagement.direct,false);
+  assert.doesNotMatch(turns[0].prompt,/<dsh-task>/);
+  assert.equal(turns[1].metadata.pluginSender,'wxid_owner');
+  assert.equal(turns[1].metadata.historyExcludeIds.length,1);
+  assert.match(turns[1].prompt,/<dsh-task>查看工作区<\/dsh-task>/);
+  assert.doesNotMatch(turns[1].prompt,/普通成员的命令|冒用身份的命令/);
+});
 test('real administrator reaches native task control without caller-supplied identity',async t=>{const f=await fixture(t),result=await f.runtime.execute('admin-dsh__tasks',{action:'status'},turn('wxid_owner'));assert.equal(JSON.parse(result.content).sender,'wxid_owner');assert.equal(f.calls(),1);});
 test('non-admin, claimed identity, disabled assistant mode and revoked admin cannot control tasks',async t=>{const f=await fixture(t);await assert.rejects(f.runtime.execute('admin-dsh__tasks',{action:'status'},turn('wxid_other')),/DENIED/);await assert.rejects(f.runtime.execute('admin-dsh__tasks',{action:'status',senderWxid:'wxid_owner'},turn('wxid_other')));f.config.wechat.workModes[key]='social';f.save();await assert.rejects(f.runtime.execute('admin-dsh__tasks',{action:'status'},turn('wxid_owner')),/DENIED/);f.config.wechat.workModes[key]='assistant';f.config.wechat.assistant.administrators=[];f.save();await assert.rejects(f.runtime.execute('admin-dsh__tasks',{action:'status'},turn('wxid_owner')),/DENIED/);assert.equal(f.calls(),0);});
 test('cancellation requires the real administrator direct message evidence',async t=>{const f=await fixture(t);await assert.rejects(f.runtime.execute('admin-dsh__tasks',{action:'cancel'},turn('wxid_owner')),/CONFIRMATION/);const value=turn('wxid_owner');value.peopleObservations=[{senderId:'wxid_owner',evidenceId:'a'.repeat(64),text:'取消这个任务'}];await f.runtime.execute('admin-dsh__tasks',{action:'cancel',evidenceId:'a'.repeat(64)},value);assert.equal(f.calls(),1);});
